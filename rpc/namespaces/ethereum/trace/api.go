@@ -83,7 +83,7 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		return nil, err
 	}
 	if blockHeight == 0 {
-		return nil, fmt.Errorf("xrplevm can't trace block 0")
+		return nil, fmt.Errorf("can't trace block 0")
 	}
 
 	resBlock, err := api.backend.TendermintBlockByNumber(blockHeight)
@@ -105,6 +105,9 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 	if err != nil {
 		api.logger.Debug("GetEthBlockFromTendermint failed", "height", blockHeight, "error", err.Error())
 		return nil, err
+	}
+	if blockHeight == 1 {
+		return api.onGenesisBlock(block)
 	}
 	transactions := block["transactions"].([]interface{})
 	stateHeader := dtracer.BuildPilelineBlockHeader(block)
@@ -221,7 +224,6 @@ func (api API) addGasUsedStateDiff(txFromAddress map[common.Address]struct{}, ne
 		if err != nil {
 			return nil, nil, err
 		}
-		api.logger.Info("get balance", "address", addr.String(), "balance", balance.String(), "block number", number.Int64())
 		nonce, err := api.backend.GetTransactionCount(addr, number)
 		if err != nil {
 			return nil, nil, err
