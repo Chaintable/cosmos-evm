@@ -1,7 +1,7 @@
 package trace
 
 import (
-	"encoding/json"
+	"bytes"
 	"math/big"
 	"strings"
 
@@ -9,6 +9,7 @@ import (
 	dtypes "github.com/cosmos/evm/debank/types"
 	rpctypes "github.com/cosmos/evm/rpc/types"
 	"github.com/cosmos/evm/x/vm/types"
+	"github.com/cosmos/gogoproto/jsonpb"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -103,11 +104,19 @@ var (
 		"0x2a35ce4f29432a9ce13b74d3f3c968b97598ceb9",
 		"0x62a3c59e7e9d869a761e4b5c66c4de180128882c",
 	}
+
+	genTxsValidatorAddress = []string{
+		"0x8aeef2c5149eff8be63f9053d19fc239fb78f1fb",
+		"0x0b787d224c9cc6af1f465d9caca106b6c70e0de2",
+		"0x78346ff37ad8b536ce9551dee5d037058d880300",
+		"0x526be0156d40f78f75bcf811d0bf97372c9fdee8",
+	}
 )
 
 func evmGenesisState() types.GenesisState {
 	var genesisState types.GenesisState
-	err := json.Unmarshal([]byte(evmGenesisStateStr), &genesisState)
+	buf := bytes.NewBuffer([]byte(evmGenesisStateStr))
+	err := jsonpb.Unmarshal(buf, &genesisState)
 	if err != nil {
 		panic(err)
 	}
@@ -130,11 +139,15 @@ func (api API) genesisAllocToStateDiff(genesisState types.GenesisState) (*dtypes
 		if err != nil {
 			return nil, err
 		}
+		nonce, err := api.backend.GetTransactionCount(address, number)
+		if err != nil {
+			return nil, err
+		}
 		code := common.Hex2Bytes(account.Code)
 		diff.NewAccounts = append(diff.NewAccounts, dtypes.NewAccount{
 			Address:  crypto.Keccak256Hash(address.Bytes()[:]),
 			Balance:  uint256.MustFromBig((*big.Int)(balance)),
-			Nonce:    0,
+			Nonce:    uint64(*nonce),
 			CodeHash: common.BytesToHash(code),
 		})
 		if len(account.Code) > 0 {
@@ -158,16 +171,20 @@ func (api API) genesisAllocToStateDiff(genesisState types.GenesisState) (*dtypes
 			Values:  values,
 		})
 	}
-	for _, addr := range bankGenesisAddress {
+	for _, addr := range append(bankGenesisAddress, genTxsValidatorAddress...) {
 		address := common.HexToAddress(addr)
 		balance, err := api.backend.GetBalance(address, rpctypes.BlockNumberOrHash{BlockNumber: &number})
+		if err != nil {
+			return nil, err
+		}
+		nonce, err := api.backend.GetTransactionCount(address, number)
 		if err != nil {
 			return nil, err
 		}
 		diff.NewAccounts = append(diff.NewAccounts, dtypes.NewAccount{
 			Address:  crypto.Keccak256Hash(address.Bytes()[:]),
 			Balance:  uint256.MustFromBig((*big.Int)(balance)),
-			Nonce:    0,
+			Nonce:    uint64(*nonce),
 			CodeHash: crypto.Keccak256Hash(nil),
 		})
 	}
