@@ -633,6 +633,34 @@ func (s *StateDB) commitWithCtx(ctx sdk.Context) error {
 	return nil
 }
 
+// CollectStateDiff invoke statedb hooks without commit
+func (s *StateDB) CollectStateDiff() {
+	for _, addr := range s.journal.sortedDirties() {
+		obj := s.stateObjects[addr]
+		if obj.suicided {
+			if s.hooks != nil && s.hooks.OnAccountDelete != nil {
+				s.hooks.OnAccountDelete(obj.Address())
+			}
+		} else {
+			if obj.code != nil && obj.dirtyCode {
+				if s.hooks != nil && s.hooks.OnCodeSet != nil {
+					s.hooks.OnCodeSet(obj.CodeHash(), obj.code)
+				}
+			}
+			if s.hooks != nil && s.hooks.OnAccountSet != nil {
+				s.hooks.OnAccountSet(obj.Address(), obj.account)
+			}
+
+			for _, key := range obj.dirtyStorage.SortedKeys() {
+				valueBytes := obj.dirtyStorage[key].Bytes()
+				if s.hooks != nil && s.hooks.OnStateSet != nil {
+					s.hooks.OnStateSet(obj.Address(), key, valueBytes)
+				}
+			}
+		}
+	}
+}
+
 func (s *StateDB) SetHooks(hooks *Hooks) {
 	s.hooks = hooks
 }

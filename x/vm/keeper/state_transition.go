@@ -364,6 +364,8 @@ func (k *Keeper) ApplyMessageWithConfig(
 		if err := stateDB.Commit(); err != nil {
 			return nil, errorsmod.Wrap(err, "failed to commit stateDB")
 		}
+	} else {
+		stateDB.CollectStateDiff()
 	}
 
 	// calculate a minimum amount of gas to be charged to sender if GasLimit
