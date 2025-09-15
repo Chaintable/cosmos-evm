@@ -26,7 +26,6 @@ import (
 	dtracer "github.com/cosmos/evm/debank/tracer"
 	dtypes "github.com/cosmos/evm/debank/types"
 	rpctypes "github.com/cosmos/evm/rpc/types"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 var (
@@ -129,11 +128,9 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		return nil, err
 	}
 	transactionStates := make([]dtypes.TransactionStateDiff, 0)
-	transactionHash := make(map[common.Hash]bool)
 	fromToAddress := make(map[common.Address]struct{})
 	for i := range transactions {
 		transaction := transactions[i].(*rpctypes.RPCTransaction)
-		transactionHash[transaction.Hash] = true
 		fromToAddress[transaction.From] = struct{}{}
 		if transaction.To != nil && transaction.To.Hex() != "" {
 			fromToAddress[*transaction.To] = struct{}{}
@@ -152,10 +149,6 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		if err = json.Unmarshal(decoded, &traceResult); err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("trace result parse error: %v", err))
 		}
-		// rpc返回的结果不包含失败的transaction，但是trace的会包含，所以需要过滤
-		if !transactionHash[common.HexToHash(traceResult.Transaction.ID)] {
-			continue
-		}
 		traceResult.Transaction.ID = transactions[i].(*rpctypes.RPCTransaction).Hash.Hex()
 		traceResult.Transaction.GasPrice = (*big.Int)(transactions[i].(*rpctypes.RPCTransaction).GasPrice)
 		blockFile.Txs = append(blockFile.Txs, traceResult.Transaction)
@@ -169,11 +162,7 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 	for i := range blockFile.Events {
 		blockFile.Events[i].LogIndex = int64(i)
 	}
-	var parentRoot = parentHeader.Root
-	if blockHeight == 1 {
-		parentRoot = ethtypes.EmptyRootHash
-	}
-	stateDiff := dtracer.BuildBlockStateDiff(parentRoot, stateHeader.StateRoot, transactionStates)
+	stateDiff := dtracer.BuildBlockStateDiff(parentHeader.Root, stateHeader.StateRoot, transactionStates)
 	// 通过tracer获得的stateDiff拿不到tx的gasUsed的变化，进行后处理
 	// evm暂时有bug 无法trace失败的transaction，hack导致to地址的balance不准确
 	newAccounts, storageContracts, err := api.addGasUsedStateDiff(fromToAddress, stateDiff.NewAccounts, blockFile.StorageContracts, blockHeight)
