@@ -130,11 +130,14 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 	}
 	transactionStates := make([]dtypes.TransactionStateDiff, 0)
 	transactionHash := make(map[common.Hash]bool)
-	transactionFromAddress := make(map[common.Address]struct{})
+	fromToAddress := make(map[common.Address]struct{})
 	for i := range transactions {
 		transaction := transactions[i].(*rpctypes.RPCTransaction)
 		transactionHash[transaction.Hash] = true
-		transactionFromAddress[transaction.From] = struct{}{}
+		fromToAddress[transaction.From] = struct{}{}
+		if transaction.To != nil && transaction.To.Hex() != "" {
+			fromToAddress[*transaction.To] = struct{}{}
+		}
 	}
 	for i, result := range traceResults {
 		traceResultRaw, ok := result.Result.(map[string]interface{})
@@ -172,7 +175,8 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 	}
 	stateDiff := dtracer.BuildBlockStateDiff(parentRoot, stateHeader.StateRoot, transactionStates)
 	// 通过tracer获得的stateDiff拿不到tx的gasUsed的变化，进行后处理
-	newAccounts, storageContracts, err := api.addGasUsedStateDiff(transactionFromAddress, stateDiff.NewAccounts, blockFile.StorageContracts, blockHeight)
+	// evm暂时有bug 无法trace失败的transaction，hack导致to地址的balance不准确
+	newAccounts, storageContracts, err := api.addGasUsedStateDiff(fromToAddress, stateDiff.NewAccounts, blockFile.StorageContracts, blockHeight)
 	if err != nil {
 		return nil, err
 	}
