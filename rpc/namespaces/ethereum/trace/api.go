@@ -136,7 +136,7 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 			fromToAddress[*transaction.To] = struct{}{}
 		}
 	}
-	for i, result := range traceResults {
+	for _, result := range traceResults {
 		traceResultRaw, ok := result.Result.(map[string]interface{})
 		if !ok {
 			return nil, status.Error(codes.Internal, "trace result parse error")
@@ -149,8 +149,6 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		if err = json.Unmarshal(decoded, &traceResult); err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("trace result parse error: %v", err))
 		}
-		traceResult.Transaction.ID = transactions[i].(*rpctypes.RPCTransaction).Hash.Hex()
-		traceResult.Transaction.GasPrice = (*big.Int)(transactions[i].(*rpctypes.RPCTransaction).GasPrice)
 		blockFile.Txs = append(blockFile.Txs, traceResult.Transaction)
 		blockFile.Traces = append(blockFile.Traces, traceResult.Traces...)
 		blockFile.Events = append(blockFile.Events, traceResult.Events...)
