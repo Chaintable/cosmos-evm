@@ -199,6 +199,7 @@ which accepts a path for the resulting pprof file.
 	cmd.Flags().Int(srvflags.JSONRPCMaxOpenConnections, cosmosevmserverconfig.DefaultMaxOpenConnections, "Sets the maximum number of simultaneous connections for the server listener") //nolint:lll
 	cmd.Flags().Bool(srvflags.JSONRPCEnableIndexer, false, "Enable the custom tx indexer for json-rpc")
 	cmd.Flags().Bool(srvflags.JSONRPCEnableMetrics, false, "Define if EVM rpc metrics server should be enabled")
+	cmd.Flags().String(srvflags.JSONRPCMetricsAddress, cosmosevmserverconfig.DefaultJSONRPCMetricsAddress, "the JSON-RPC metrics address to listen on")
 
 	cmd.Flags().String(srvflags.EVMTracer, cosmosevmserverconfig.DefaultEVMTracer, "the EVM tracer type to collect execution traces from the EVM transaction execution (json|struct|access_list|markdown)") //nolint:lll
 	cmd.Flags().Uint64(srvflags.EVMMaxTxGasWanted, cosmosevmserverconfig.DefaultMaxTxGasWanted, "the gas wanted for each eth tx returned in ante handler in check tx mode")                                 //nolint:lll
@@ -417,6 +418,7 @@ func startInProcess(svrCtx *server.Context, clientCtx client.Context, opts Start
 	// Flag not added in config to avoid user enabling in config without passing in CLI
 	if config.JSONRPC.Enable && svrCtx.Viper.GetBool(srvflags.JSONRPCEnableMetrics) {
 		ethmetricsexp.Setup(config.JSONRPC.MetricsAddress)
+		logger.Info("Starting metrics server", "addr", fmt.Sprintf("http://%s/debug/metrics", config.JSONRPC.MetricsAddress))
 	}
 
 	var idxer cosmosevmtypes.EVMTxIndexer

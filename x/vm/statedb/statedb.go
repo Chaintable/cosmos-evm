@@ -66,6 +66,8 @@ type StateDB struct {
 
 	// The count of calls to precompiles
 	precompileCallsCounter uint8
+
+	hooks *Hooks
 }
 
 // New creates a new state from a given trie.
@@ -147,6 +149,9 @@ func (s *StateDB) AddLog(log *ethtypes.Log) {
 	log.TxIndex = s.txConfig.TxIndex
 	log.Index = s.txConfig.LogIndex + uint(len(s.logs))
 	s.logs = append(s.logs, log)
+	if s.hooks != nil && s.hooks.OnLog != nil {
+		s.hooks.OnLog(log)
+	}
 }
 
 // Logs returns the logs of current transaction.
@@ -591,6 +596,9 @@ func (s *StateDB) commitWithCtx(ctx sdk.Context) error {
 			if err := s.keeper.DeleteAccount(ctx, obj.Address()); err != nil {
 				return errorsmod.Wrapf(err, "failed to delete account %s", obj.Address())
 			}
+			if s.hooks != nil && s.hooks.OnAccountDelete != nil {
+				s.hooks.OnAccountDelete(obj.Address())
+			}
 		} else {
 			if obj.code != nil && obj.dirtyCode {
 				if len(obj.code) == 0 {
@@ -598,9 +606,15 @@ func (s *StateDB) commitWithCtx(ctx sdk.Context) error {
 				} else {
 					s.keeper.SetCode(ctx, obj.CodeHash(), obj.code)
 				}
+				if s.hooks != nil && s.hooks.OnCodeSet != nil {
+					s.hooks.OnCodeSet(obj.CodeHash(), obj.code)
+				}
 			}
 			if err := s.keeper.SetAccount(ctx, obj.Address(), obj.account); err != nil {
 				return errorsmod.Wrap(err, "failed to set account")
+			}
+			if s.hooks != nil && s.hooks.OnAccountSet != nil {
+				s.hooks.OnAccountSet(obj.Address(), obj.account)
 			}
 
 			for _, key := range obj.dirtyStorage.SortedKeys() {
@@ -610,8 +624,43 @@ func (s *StateDB) commitWithCtx(ctx sdk.Context) error {
 				} else {
 					s.keeper.SetState(ctx, obj.Address(), key, valueBytes)
 				}
+				if s.hooks != nil && s.hooks.OnStateSet != nil {
+					s.hooks.OnStateSet(obj.Address(), key, valueBytes)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// CollectStateDiff invoke statedb hooks without commit
+func (s *StateDB) CollectStateDiff() {
+	for _, addr := range s.journal.sortedDirties() {
+		obj := s.stateObjects[addr]
+		if obj.suicided {
+			if s.hooks != nil && s.hooks.OnAccountDelete != nil {
+				s.hooks.OnAccountDelete(obj.Address())
+			}
+		} else {
+			if obj.code != nil && obj.dirtyCode {
+				if s.hooks != nil && s.hooks.OnCodeSet != nil {
+					s.hooks.OnCodeSet(obj.CodeHash(), obj.code)
+				}
+			}
+			if s.hooks != nil && s.hooks.OnAccountSet != nil {
+				s.hooks.OnAccountSet(obj.Address(), obj.account)
+			}
+
+			for _, key := range obj.dirtyStorage.SortedKeys() {
+				valueBytes := obj.dirtyStorage[key].Bytes()
+				if s.hooks != nil && s.hooks.OnStateSet != nil {
+					s.hooks.OnStateSet(obj.Address(), key, valueBytes)
+				}
+			}
+		}
+	}
+}
+
+func (s *StateDB) SetHooks(hooks *Hooks) {
+	s.hooks = hooks
 }

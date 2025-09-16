@@ -3,6 +3,7 @@ package keeper
 import (
 	"math/big"
 
+	dtracer "github.com/cosmos/evm/debank/tracer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	evmcore "github.com/ethereum/go-ethereum/core"
@@ -277,6 +278,16 @@ func (k *Keeper) ApplyMessageWithConfig(
 	)
 
 	stateDB := statedb.New(ctx, k, txConfig)
+	switch t := tracer.(type) {
+	case *dtracer.CallTracer:
+		stateDB.SetHooks(&statedb.Hooks{
+			OnAccountSet:    t.OnAccountSet,
+			OnAccountDelete: t.OnAccountDelete,
+			OnStateSet:      t.OnStateSet,
+			OnCodeSet:       t.OnCodeSet,
+			OnLog:           t.OnLog,
+		})
+	}
 	evm := k.NewEVM(ctx, msg, cfg, tracer, stateDB)
 
 	leftoverGas := msg.GasLimit
@@ -353,6 +364,8 @@ func (k *Keeper) ApplyMessageWithConfig(
 		if err := stateDB.Commit(); err != nil {
 			return nil, errorsmod.Wrap(err, "failed to commit stateDB")
 		}
+	} else {
+		stateDB.CollectStateDiff()
 	}
 
 	// calculate a minimum amount of gas to be charged to sender if GasLimit

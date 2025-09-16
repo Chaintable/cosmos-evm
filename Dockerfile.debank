@@ -1,0 +1,22 @@
+# builder image
+FROM golang:1.23-bookworm as builder
+
+ARG GITHUB_TOKEN
+
+RUN git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com"
+
+WORKDIR /evm
+
+COPY . .
+
+RUN go mod download
+
+RUN make build
+
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y ca-certificates wget libsnappy-dev libjemalloc-dev
+
+COPY --from=builder /evm/build/evmd /usr/local/bin/evmd
+
+ENTRYPOINT ["/usr/local/bin/evmd"]
