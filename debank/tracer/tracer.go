@@ -357,7 +357,6 @@ func (t *CallTracer) OnLog(log *ethtypes.Log) {
 func (t *CallTracer) OnAccountSet(addr common.Address, account statedb.Account) {
 	addrhash := crypto.Keccak256Hash(addr.Bytes())
 	t.NewAccounts[addrhash] = account
-	t.storageChanges[addr] = struct{}{}
 }
 
 func (t *CallTracer) OnAccountDelete(addr common.Address) {
@@ -372,6 +371,7 @@ func (t *CallTracer) OnStateSet(addr common.Address, key common.Hash, value []by
 	}
 	storageDiff := t.StorageDiff[addrhash]
 	storageDiff[crypto.Keccak256Hash(key.Bytes())] = value
+	t.storageChanges[addr] = struct{}{}
 }
 
 func (t *CallTracer) OnCodeSet(codeHash []byte, code []byte) {
