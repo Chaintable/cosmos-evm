@@ -693,9 +693,10 @@ func (k *Keeper) traceTx(
 	if err != nil {
 		return nil, 0, status.Error(codes.Internal, err.Error())
 	}
+	baseFee := k.GetBaseFee(ctx)
 	switch t := tracer.(type) {
 	case *dtracer.CallTracer:
-		t.OnTxEnd(msg.From, tx, res)
+		t.OnTxEnd(msg.From, tx, baseFee, res)
 	}
 
 	var result interface{}

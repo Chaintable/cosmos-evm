@@ -6,6 +6,7 @@ import (
 	"time"
 
 	dtypes "github.com/cosmos/evm/debank/types"
+	"github.com/cosmos/evm/x/vm/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -34,6 +35,7 @@ func BuildPipelineTransaction(
 	index int64,
 	from common.Address,
 	gasUsed *big.Int,
+	baseFee *big.Int,
 	success bool,
 ) dtypes.Transaction {
 	var to = common.Address{}
@@ -59,6 +61,11 @@ func BuildPipelineTransaction(
 	case ethtypes.DynamicFeeTxType:
 		transaction.GasFeeCap = tx.GasFeeCap()
 		transaction.GasTipCap = tx.GasTipCap()
+		// if the transaction has been mined, compute the effective gas price
+		if baseFee != nil {
+			price := types.EffectiveGasPrice(baseFee, tx.GasFeeCap(), tx.GasTipCap())
+			transaction.GasPrice = price
+		}
 	}
 	return transaction
 }

@@ -378,8 +378,8 @@ func (t *CallTracer) OnCodeSet(codeHash []byte, code []byte) {
 	t.NewCodes[common.BytesToHash(codeHash)] = code
 }
 
-func (t *CallTracer) OnTxEnd(from common.Address, tx *ethtypes.Transaction, res *types.MsgEthereumTxResponse) {
-	t.transaction = BuildPipelineTransaction(tx, int64(t.ctx.TxIndex), from, big.NewInt(int64(res.GasUsed)), !res.Failed())
+func (t *CallTracer) OnTxEnd(from common.Address, tx *ethtypes.Transaction, baseFee *big.Int, res *types.MsgEthereumTxResponse) {
+	t.transaction = BuildPipelineTransaction(tx, int64(t.ctx.TxIndex), from, big.NewInt(int64(res.GasUsed)), baseFee, !res.Failed())
 }
 
 func (t *CallTracer) GetTraces() []dtypes.Trace {
