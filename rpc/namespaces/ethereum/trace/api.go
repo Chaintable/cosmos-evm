@@ -139,7 +139,8 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 	for _, result := range traceResults {
 		traceResultRaw, ok := result.Result.(map[string]interface{})
 		if !ok {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("trace result parse error %T result: %+v", result.Result, result.Result))
+			api.logger.Error("failed to parse trace result: %+v", result)
+			return nil, status.Error(codes.Internal, "trace result parse error")
 		}
 		decoded, err := json.Marshal(traceResultRaw)
 		if err != nil {
