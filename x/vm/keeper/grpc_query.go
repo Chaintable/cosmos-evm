@@ -704,7 +704,6 @@ func (k *Keeper) traceTx(
 	if err != nil {
 		return nil, 0, status.Error(codes.Internal, err.Error())
 	}
-	k.Logger(ctx).Info("debank trace result", "result", result)
 
 	return &result, txConfig.LogIndex + uint(len(res.Logs)), nil
 }
