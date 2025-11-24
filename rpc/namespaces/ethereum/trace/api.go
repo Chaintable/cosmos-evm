@@ -137,6 +137,10 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		}
 	}
 	for _, result := range traceResults {
+		if result.Error != "" {
+			api.logger.Error("trace result error", "error", result.Error)
+			continue
+		}
 		traceResultRaw, ok := result.Result.(map[string]interface{})
 		if !ok {
 			api.logger.Error("failed to parse trace result: %+v", result)
