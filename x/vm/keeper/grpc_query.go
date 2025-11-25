@@ -6,16 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
+	dtracer "github.com/cosmos/evm/debank/tracer"
+	dtypes "github.com/cosmos/evm/debank/types"
+	rpctypes "github.com/cosmos/evm/rpc/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	ethparams "github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -579,12 +585,13 @@ func (k Keeper) TraceBlock(c context.Context, req *types.QueryTraceBlockRequest)
 
 	txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
 
+	commit := len(req.Txs) > 1
 	for i, tx := range req.Txs {
 		result := types.TxTraceResult{}
 		ethTx := tx.AsTransaction()
 		txConfig.TxHash = ethTx.Hash()
 		txConfig.TxIndex = uint(i) //nolint:gosec // G115 // won't exceed uint64
-		traceResult, logIndex, err := k.traceTx(ctx, cfg, txConfig, signer, ethTx, req.TraceConfig, true, nil)
+		traceResult, logIndex, err := k.traceTx(ctx, cfg, txConfig, signer, ethTx, req.TraceConfig, commit, nil)
 		if err != nil {
 			result.Error = err.Error()
 		} else {
@@ -653,7 +660,9 @@ func (k *Keeper) traceTx(
 		TxHash:    txConfig.TxHash,
 	}
 
-	if traceConfig.Tracer != "" {
+	if traceConfig.Tracer == dtracer.Name {
+		tracer = dtracer.NewCallTracer(tCtx)
+	} else if traceConfig.Tracer != "" {
 		if tracer, err = tracers.DefaultDirectory.New(traceConfig.Tracer, tCtx, tracerJSONConfig); err != nil {
 			return nil, 0, status.Error(codes.Internal, err.Error())
 		}
@@ -683,6 +692,11 @@ func (k *Keeper) traceTx(
 	res, err := k.ApplyMessageWithConfig(ctx, *msg, tracer, commitMessage, cfg, txConfig)
 	if err != nil {
 		return nil, 0, status.Error(codes.Internal, err.Error())
+	}
+	baseFee := k.GetBaseFee(ctx)
+	switch t := tracer.(type) {
+	case *dtracer.CallTracer:
+		t.OnTxEnd(msg.From, tx, baseFee, res)
 	}
 
 	var result interface{}
@@ -723,4 +737,75 @@ func (k Keeper) Config(_ context.Context, _ *types.QueryConfigRequest) (*types.Q
 	config.Decimals = uint64(types.GetEVMCoinDecimals())
 
 	return &types.QueryConfigResponse{Config: config}, nil
+}
+
+func genesisAllocToStateDiff(k Keeper, genesisState types.GenesisState) *dtypes.BlockStorageDiff {
+	diff := &dtypes.BlockStorageDiff{}
+	diff.NewAccounts = make([]dtypes.NewAccount, 0)
+	diff.NewCodes = make([]dtypes.NewCode, 0)
+	diff.StorageDiff = make([]dtypes.AccountStorageDiff, 0)
+	diff.DeletedAccounts = make([]common.Hash, 0)
+	ctx := sdk.UnwrapSDKContext(rpctypes.ContextWithHeight(0))
+
+	for _, account := range genesisState.Accounts {
+		address := common.HexToAddress(account.Address)
+		balance := k.GetBalance(ctx, address)
+		code := common.Hex2Bytes(account.Code)
+		diff.NewAccounts = append(diff.NewAccounts, dtypes.NewAccount{
+			Address:  crypto.Keccak256Hash(address.Bytes()[:]),
+			Balance:  balance,
+			Nonce:    0,
+			CodeHash: common.BytesToHash(code),
+		})
+		if len(account.Code) > 0 {
+			diff.NewCodes = append(diff.NewCodes, dtypes.NewCode{
+				CodeHash: common.BytesToHash(code),
+				Code:     code,
+			})
+		}
+		values := make([]dtypes.IndexValuePair, 0)
+		for _, state := range account.Storage {
+			key := common.HexToHash(state.Key)
+			v := common.HexToHash(state.Value)
+			value := uint256.NewInt(0).SetBytes(v.Bytes())
+			values = append(values, dtypes.IndexValuePair{
+				Index: key,
+				Value: value,
+			})
+		}
+		diff.StorageDiff = append(diff.StorageDiff, dtypes.AccountStorageDiff{
+			Address: crypto.Keccak256Hash(address.Bytes()[:]),
+			Values:  values,
+		})
+	}
+	return diff
+}
+
+func onGenesisBlock(k Keeper, block map[string]interface{}, genesisState types.GenesisState) (*dtypes.DebankOutPut, error) {
+	header := dtracer.BuildPilelineBlockHeader(block)
+	blockDiff := genesisAllocToStateDiff(k, genesisState)
+	blockDiff.Hash = header.StateRoot
+	blockDiff.ParentHash = ethtypes.EmptyRootHash
+
+	blockFile := &dtypes.BlockFile{
+		Block:            dtracer.BuildPipelineBlock(block),
+		Txs:              make([]dtypes.Transaction, 0),
+		Events:           make([]dtypes.Event, 0),
+		Traces:           make([]dtypes.Trace, 0),
+		ErrorEvents:      make([]dtypes.Event, 0),
+		ErrorTraces:      make([]dtypes.Trace, 0),
+		StorageContracts: make([]string, 0),
+	}
+
+	for _, acc := range genesisState.Accounts {
+		if len(acc.Storage) > 0 {
+			blockFile.StorageContracts = append(blockFile.StorageContracts, strings.ToLower(acc.Address))
+		}
+	}
+	return &dtypes.DebankOutPut{
+		BlockFile:      blockFile,
+		Header:         header,
+		StateDiff:      blockDiff,
+		ValidationHash: blockFile.Validation().ValidationHash,
+	}, nil
 }
