@@ -3,6 +3,7 @@ package rpc
 import (
 	"fmt"
 
+	"github.com/cosmos/evm/rpc/namespaces/ethereum/debank"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	rpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
@@ -39,6 +40,7 @@ const (
 	DebugNamespace    = "debug"
 	MinerNamespace    = "miner"
 	TraceNamespace    = "trace"
+	DebankNamespace   = "debank"
 
 	apiVersion = "1.0"
 )
@@ -169,6 +171,22 @@ func init() {
 					Namespace: "trace",
 					Version:   "1.0",
 					Service:   trace.NewAPI(ctx, ctx.Logger, evmBackend, clientCtx),
+					Public:    true,
+				},
+			}
+		},
+		DebankNamespace: func(ctx *server.Context,
+			clientCtx client.Context,
+			_ *rpcclient.WSClient,
+			allowUnprotectedTxs bool,
+			indexer types.EVMTxIndexer,
+		) []rpc.API {
+			evmBackend := backend.NewBackend(ctx, ctx.Logger, clientCtx, allowUnprotectedTxs, indexer)
+			return []rpc.API{
+				{
+					Namespace: DebankNamespace,
+					Version:   "1.0",
+					Service:   debank.NewAPI(ctx, evmBackend, clientCtx),
 					Public:    true,
 				},
 			}

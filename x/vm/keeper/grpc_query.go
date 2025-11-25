@@ -12,6 +12,7 @@ import (
 	dtracer "github.com/cosmos/evm/debank/tracer"
 	dtypes "github.com/cosmos/evm/debank/types"
 	rpctypes "github.com/cosmos/evm/rpc/types"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
@@ -242,24 +243,144 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// ApplyMessageWithConfig expect correct nonce set in msg
-	nonce := k.GetNonce(ctx, args.GetFrom())
-	args.Nonce = (*hexutil.Uint64)(&nonce)
+	if len(args.Args) > 0 {
+		simulateResList := make([]types.DebankSingleSimulateResult, 0)
+		txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
+		for i, arg := range args.Args {
+			if arg.Nonce == nil {
+				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  "nonce is nil",
+				})
+				continue
+			}
+			if i > 0 && (uint64)(*arg.Nonce) <= (uint64)(*args.Args[i-1].Nonce) {
+				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  fmt.Sprintf("nonce decreases, tx index %d has nonce %d, tx index %d has nonce %d", i-1, (uint64)(*args.Args[i-1].Nonce), i, (uint64)(*args.Args[i].Nonce)),
+				})
+				continue
+			}
+			nonce := k.GetNonce(ctx, arg.GetFrom())
+			arg.Nonce = (*hexutil.Uint64)(&nonce)
+			msg, err := arg.ToMessage(req.GasCap, cfg.BaseFee)
+			if err != nil {
+				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  err.Error(),
+				})
+				continue
+			}
+			tCtx := &tracers.Context{
+				BlockHash:   *args.BlockHash,
+				BlockNumber: big.NewInt(ctx.BlockHeight()),
+				TxIndex:     int(k.GetTxIndexTransient(ctx) + 1),
+				TxHash:      common.BigToHash(big.NewInt(int64(i + 1))),
+			}
+			tracer := dtracer.NewCallTracer(tCtx)
+			cfg.SimulateExec = true
+			// pass true to commit StateDB
+			res, err := k.ApplyMessageWithConfig(ctx, msg, tracer, true, cfg, txConfig)
+			if err != nil {
+				simulateResult := types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  err.Error(),
+				}
+				if res != nil {
+					simulateResult.GasUsed = res.GasUsed
+				}
+				simulateResList = append(simulateResList, simulateResult)
+				continue
+			}
+			if res != nil && res.Failed() {
+				SimulateResult := types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  res.VmError,
+				}
+				if strings.HasPrefix(res.VmError, "execution reverted") {
+					SimulateResult.Code = types.SimulateErrorReverted
+					reason, _ := abi.UnpackRevert(res.Revert())
+					if reason != "" {
+						SimulateResult.Err = reason
+					}
+				}
+				if strings.HasPrefix(res.VmError, "out of gas") {
+					SimulateResult.Code = types.SimulateErrorReverted
+				}
+				if strings.HasPrefix(res.VmError, "insufficient") {
+					SimulateResult.Code = types.SimulateErrorInsufficientBalane
+				}
+				SimulateResult.GasUsed = res.GasUsed
+				simulateResList = append(simulateResList, SimulateResult)
+				continue
+			}
+			traces := make([]types.DebankTrace, 0)
+			events := make([]types.DebankEvent, 0)
+			for _, trace := range tracer.GetTraces() {
+				traces = append(traces, types.DebankTrace{
+					ID:                trace.ID,
+					From:              trace.From,
+					Gas:               trace.Gas,
+					Input:             trace.Input,
+					To:                trace.To,
+					Value:             trace.Value,
+					GasUsed:           trace.GasUsed,
+					Output:            trace.Output,
+					CallCreateType:    trace.CallCreateType,
+					CallType:          trace.CallType,
+					ParentTraceID:     trace.ParentTraceID,
+					PosInParentTrace:  trace.PosInParentTrace,
+					SelfStorageChange: trace.SelfStorageChange,
+					StorageChange:     trace.StorageChange,
+				})
+			}
+			for _, event := range tracer.GetLogs() {
+				events = append(events, types.DebankEvent{
+					ID:            event.ID,
+					Address:       event.Address,
+					Selector:      event.Selector,
+					Topics:        event.Topics,
+					Data:          event.Data,
+					ParentTraceID: event.ParentTraceID,
+					Position:      event.Position,
+				})
+			}
+			simulateResult := types.DebankSingleSimulateResult{
+				Traces: traces,
+				Events: events,
+			}
+			if res != nil {
+				simulateResult.GasUsed = res.GasUsed
+			}
+			simulateResList = append(simulateResList, simulateResult)
+		}
+		bz, err := json.Marshal(&simulateResList)
+		if err != nil {
+			return nil, err
+		}
+		return &types.MsgEthereumTxResponse{
+			Ret: bz,
+		}, nil
+	} else {
+		// ApplyMessageWithConfig expect correct nonce set in msg
+		nonce := k.GetNonce(ctx, args.GetFrom())
+		args.Nonce = (*hexutil.Uint64)(&nonce)
 
-	msg, err := args.ToMessage(req.GasCap, cfg.BaseFee)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		msg, err := args.ToMessage(req.GasCap, cfg.BaseFee)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+
+		txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
+
+		// pass false to not commit StateDB
+		res, err := k.ApplyMessageWithConfig(ctx, msg, nil, false, cfg, txConfig)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+		return res, nil
 	}
-
-	txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
-
-	// pass false to not commit StateDB
-	res, err := k.ApplyMessageWithConfig(ctx, msg, nil, false, cfg, txConfig)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return res, nil
 }
 
 // EstimateGas implements eth_estimateGas rpc api.

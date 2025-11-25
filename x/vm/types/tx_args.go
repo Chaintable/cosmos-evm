@@ -43,6 +43,9 @@ type TransactionArgs struct {
 	BlobHashes    []common.Hash
 
 	SkipAccountChecks bool
+
+	BlockHash *common.Hash
+	Args      []TransactionArgs `json:"args,omitempty"`
 }
 
 // String return the struct in a string format
