@@ -81,9 +81,34 @@ func (a *API) SimulateTransactions(args []CallArgs, blockContext *rpctypes.Deban
 		a.logger.Error("json.Unmarshal faield", "err", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return applyBlockContext(simulateRes), nil
+	return applyBlockContext(int64(blockNum), blockHash, resBlock.Block.Time.Unix(), simulateRes), nil
 }
 
-func applyBlockContext(simulateResList []evmtypes.DebankSingleSimulateResult) *rpctypes.DebankSimulateResp {
-	return nil
+func applyBlockContext(blockNumber int64, blockHash common.Hash, blockTime int64, simulateResList []evmtypes.DebankSingleSimulateResult) *rpctypes.DebankSimulateResp {
+	isSuccess := true
+	for i := range simulateResList {
+		txId := common.BigToHash(big.NewInt(int64(i + 1)))
+		simulateRes := simulateResList[i]
+		if simulateRes.Code != 0 {
+			isSuccess = false
+		}
+		for j := range simulateRes.Events {
+			event := simulateRes.Events[j]
+			event.TxId = txId
+		}
+		for j := range simulateRes.Traces {
+			trace := simulateRes.Traces[j]
+			trace.TxID = txId
+		}
+	}
+	resp := &rpctypes.DebankSimulateResp{
+		Results: simulateResList,
+		Stats: rpctypes.DebankSimulateStats{
+			BlockNum:  uint64(blockNumber),
+			BlockHash: blockHash,
+			BlockTime: blockTime,
+			Success:   isSuccess,
+		},
+	}
+	return resp
 }

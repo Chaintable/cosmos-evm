@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	SimulateErrorUnKnown            = 1000
-	SimulateErrorInsufficientBalane = 1001
-	SimulateErrorReverted           = 1002
+	SimulateErrorUnKnown            = -39004
+	SimulateErrorInsufficientBalane = -39001
+	SimulateErrorReverted           = -39000
 )
 
 type DebankSingleSimulateResult struct {
@@ -32,7 +32,7 @@ type DebankTrace struct {
 	Output            hexutil.Bytes `json:"output"`
 	CallCreateType    string        `json:"type"` // ['create', 'suicide', 'call', 'empty']
 	CallType          string        `json:"call_type"`
-	TxID              string        `json:"tx_id"`
+	TxID              common.Hash   `json:"tx_id"`
 	ParentTraceID     string        `json:"parent_trace_id"`
 	PosInParentTrace  int64         `json:"pos_in_parent_trace"`
 	SelfStorageChange bool          `json:"self_storage_change"`
