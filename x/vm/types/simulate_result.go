@@ -3,6 +3,7 @@ package types
 import (
 	"math/big"
 
+	dtypes "github.com/cosmos/evm/debank/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -39,6 +40,25 @@ type DebankTrace struct {
 	StorageChange     bool          `json:"storage_change"`
 }
 
+func FromTracerTrace(trace dtypes.Trace) DebankTrace {
+	return DebankTrace{
+		ID:                trace.ID,
+		From:              trace.From,
+		Gas:               trace.Gas,
+		Input:             trace.Input,
+		To:                trace.To,
+		Value:             trace.Value,
+		GasUsed:           trace.GasUsed,
+		Output:            trace.Output,
+		CallCreateType:    trace.CallCreateType,
+		CallType:          trace.CallType,
+		ParentTraceID:     trace.ParentTraceID,
+		PosInParentTrace:  trace.PosInParentTrace,
+		SelfStorageChange: trace.SelfStorageChange,
+		StorageChange:     trace.StorageChange,
+	}
+}
+
 type DebankEvent struct {
 	ID            string        `json:"id"`
 	Address       string        `json:"contract_id"`
@@ -48,4 +68,16 @@ type DebankEvent struct {
 	TxId          common.Hash   `json:"tx_id"`
 	ParentTraceID string        `json:"parent_trace_id"`
 	Position      int64         `json:"pos_in_parent_trace"`
+}
+
+func FromTracerEvent(event dtypes.Event) DebankEvent {
+	return DebankEvent{
+		ID:            event.ID,
+		Address:       event.Address,
+		Selector:      event.Selector,
+		Topics:        event.Topics,
+		Data:          event.Data,
+		ParentTraceID: event.ParentTraceID,
+		Position:      event.Position,
+	}
 }

@@ -295,33 +295,10 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 			traces := make([]types.DebankTrace, 0)
 			events := make([]types.DebankEvent, 0)
 			for _, trace := range tracer.GetTraces() {
-				traces = append(traces, types.DebankTrace{
-					ID:                trace.ID,
-					From:              trace.From,
-					Gas:               trace.Gas,
-					Input:             trace.Input,
-					To:                trace.To,
-					Value:             trace.Value,
-					GasUsed:           trace.GasUsed,
-					Output:            trace.Output,
-					CallCreateType:    trace.CallCreateType,
-					CallType:          trace.CallType,
-					ParentTraceID:     trace.ParentTraceID,
-					PosInParentTrace:  trace.PosInParentTrace,
-					SelfStorageChange: trace.SelfStorageChange,
-					StorageChange:     trace.StorageChange,
-				})
+				traces = append(traces, types.FromTracerTrace(trace))
 			}
 			for _, event := range tracer.GetLogs() {
-				events = append(events, types.DebankEvent{
-					ID:            event.ID,
-					Address:       event.Address,
-					Selector:      event.Selector,
-					Topics:        event.Topics,
-					Data:          event.Data,
-					ParentTraceID: event.ParentTraceID,
-					Position:      event.Position,
-				})
+				events = append(events, types.FromTracerEvent(event))
 			}
 			simulateResult := types.DebankSingleSimulateResult{
 				Traces: traces,
@@ -331,6 +308,12 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 				simulateResult.GasUsed = res.GasUsed
 			}
 			if res != nil && res.Failed() {
+				for _, trace := range tracer.GetErrorTraces() {
+					simulateResult.Traces = append(simulateResult.Traces, types.FromTracerTrace(trace))
+				}
+				for _, event := range tracer.GetErrorLogs() {
+					simulateResult.Events = append(simulateResult.Events, types.FromTracerEvent(event))
+				}
 				simulateResult.Code = types.SimulateErrorUnKnown
 				simulateResult.Err = res.VmError
 				if strings.HasPrefix(res.VmError, "execution reverted") {
