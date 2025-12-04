@@ -208,8 +208,7 @@ func doOneCall(backend backend.EVMBackend, blockNrOrHash rpctypes.BlockNumberOrH
 	return result, nil
 }
 
-// Call performs a raw contract call.
-func (a *API) MultiCall(
+func (a *API) ContractMultiCall(
 	args []evmtypes.TransactionArgs,
 	blockContext *rpctypes.DebankBlockContext,
 	_ *rpctypes.BlockOverrides,
