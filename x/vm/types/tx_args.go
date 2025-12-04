@@ -44,7 +44,7 @@ type TransactionArgs struct {
 
 	SkipAccountChecks bool
 
-	BlockHash *common.Hash
+	BlockHash *common.Hash      `json:"blockHash,omitempty"`
 	Args      []TransactionArgs `json:"args,omitempty"`
 }
 
