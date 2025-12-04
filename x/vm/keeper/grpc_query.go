@@ -292,28 +292,6 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 				simulateResList = append(simulateResList, simulateResult)
 				continue
 			}
-			if res != nil && res.Failed() {
-				SimulateResult := types.DebankSingleSimulateResult{
-					Code: types.SimulateErrorUnKnown,
-					Err:  res.VmError,
-				}
-				if strings.HasPrefix(res.VmError, "execution reverted") {
-					SimulateResult.Code = types.SimulateErrorReverted
-					reason, _ := abi.UnpackRevert(res.Revert())
-					if reason != "" {
-						SimulateResult.Err = reason
-					}
-				}
-				if strings.HasPrefix(res.VmError, "out of gas") {
-					SimulateResult.Code = types.SimulateErrorReverted
-				}
-				if strings.HasPrefix(res.VmError, "insufficient") {
-					SimulateResult.Code = types.SimulateErrorInsufficientBalane
-				}
-				SimulateResult.GasUsed = res.GasUsed
-				simulateResList = append(simulateResList, SimulateResult)
-				continue
-			}
 			traces := make([]types.DebankTrace, 0)
 			events := make([]types.DebankEvent, 0)
 			for _, trace := range tracer.GetTraces() {
@@ -351,6 +329,23 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 			}
 			if res != nil {
 				simulateResult.GasUsed = res.GasUsed
+			}
+			if res != nil && res.Failed() {
+				simulateResult.Code = types.SimulateErrorUnKnown
+				simulateResult.Err = res.VmError
+				if strings.HasPrefix(res.VmError, "execution reverted") {
+					simulateResult.Code = types.SimulateErrorReverted
+					reason, _ := abi.UnpackRevert(res.Revert())
+					if reason != "" {
+						simulateResult.Err = reason
+					}
+				}
+				if strings.HasPrefix(res.VmError, "out of gas") {
+					simulateResult.Code = types.SimulateErrorReverted
+				}
+				if strings.HasPrefix(res.VmError, "insufficient") {
+					simulateResult.Code = types.SimulateErrorInsufficientBalane
+				}
 			}
 			simulateResList = append(simulateResList, simulateResult)
 		}
