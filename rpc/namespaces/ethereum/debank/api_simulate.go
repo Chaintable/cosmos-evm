@@ -69,7 +69,7 @@ func (a *API) SimulateTransactions(args []CallArgs, blockContext *rpctypes.Deban
 	// From ContextWithHeight: if the provided height is 0,
 	// it will return an empty context and the gRPC query will use
 	// the latest block height for querying.
-	ctx := rpctypes.ContextWithHeight(int64(blockNum))
+	ctx := rpctypes.ContextWithHeight(resBlock.Block.Height)
 	res, err := a.queryClient.EthCall(ctx, &req)
 	if err != nil {
 		a.logger.Error("EthCall faield", "req", req, "err", err)
@@ -81,7 +81,7 @@ func (a *API) SimulateTransactions(args []CallArgs, blockContext *rpctypes.Deban
 		a.logger.Error("json.Unmarshal faield", "err", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return applyBlockContext(int64(blockNum), blockHash, resBlock.Block.Time.Unix(), simulateRes), nil
+	return applyBlockContext(resBlock.Block.Height, blockHash, resBlock.Block.Time.Unix(), simulateRes), nil
 }
 
 func applyBlockContext(blockNumber int64, blockHash common.Hash, blockTime int64, simulateResList []evmtypes.DebankSingleSimulateResult) *rpctypes.DebankSimulateResp {
