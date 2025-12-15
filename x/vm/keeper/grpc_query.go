@@ -247,20 +247,6 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 		simulateResList := make([]types.DebankSingleSimulateResult, 0)
 		txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
 		for i, arg := range args.Args {
-			if arg.Nonce == nil {
-				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
-					Code: types.SimulateErrorUnKnown,
-					Err:  "nonce is nil",
-				})
-				continue
-			}
-			if i > 0 && (uint64)(*arg.Nonce) <= (uint64)(*args.Args[i-1].Nonce) {
-				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
-					Code: types.SimulateErrorUnKnown,
-					Err:  fmt.Sprintf("nonce decreases, tx index %d has nonce %d, tx index %d has nonce %d", i-1, (uint64)(*args.Args[i-1].Nonce), i, (uint64)(*args.Args[i].Nonce)),
-				})
-				continue
-			}
 			nonce := k.GetNonce(ctx, arg.GetFrom())
 			arg.Nonce = (*hexutil.Uint64)(&nonce)
 			msg, err := arg.ToMessage(req.GasCap, cfg.BaseFee)
