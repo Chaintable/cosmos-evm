@@ -20,22 +20,9 @@ const (
 	multiCallLimit    = 50
 
 	// client param error
-	errCodeTxArgs               = -40000
-	errNativeMethodNotFound     = -40001
-	errNativeMethodInput        = -40002
-	errNativeMethodInputAddress = -40003
-
-	// evm processing error
-	errNativeMethodOutput     = -40010
-	errNativeMethodStateError = -40011
-	errMessageExecuting       = -40012
-	errEVMCancelled           = -40013
-	errEVMReverted            = -40014
-	errEVMFastFailed          = -40015
-
-	// internal error
-	errUnderlyingDB = -40020
-	errLoadingState = -40021
+	errInvalidParams = -32602
+	errInternalError = -32603
+	errEvmFailed     = -39004
 )
 
 const (
@@ -97,47 +84,47 @@ func handleNative(ctx context.Context, backend backend.EVMBackend, blockNrOrHash
 	data := arg.GetData()
 	method, err := erc20ABI.MethodById(data)
 	if err != nil {
-		return nil, errNativeMethodNotFound, err
+		return nil, errInvalidParams, err
 	}
 	switch method.Name {
 	case "name", "symbol":
-		res, err := method.Outputs.Pack("CRO")
+		res, err := method.Outputs.Pack("TAC")
 		if err != nil {
-			return nil, errNativeMethodOutput, err
+			return nil, errInternalError, err
 		}
 		return res, 0, nil
 	case "decimals":
 		res, err := method.Outputs.Pack(uint8(18))
 		if err != nil {
-			return nil, errNativeMethodOutput, err
+			return nil, errInternalError, err
 		}
 		return res, 0, nil
 	case "totalSupply":
 		res, err := method.Outputs.Pack(big.NewInt(1_000_000_000_000_000_000)) //
 		if err != nil {
-			return nil, errNativeMethodOutput, err
+			return nil, errInternalError, err
 		}
 		return res, 0, nil
 	case "balanceOf":
 		inputs, err := method.Inputs.Unpack(data[4:])
 		if err != nil || len(inputs) == 0 {
-			return nil, errNativeMethodInput, err
+			return nil, errInvalidParams, err
 		}
 		address, ok := inputs[0].(common.Address)
 		if !ok {
-			return nil, errNativeMethodInputAddress, fmt.Errorf("input address error")
+			return nil, errInvalidParams, fmt.Errorf("input address error")
 		}
 		balanceInt, err := backend.GetBalance(address, blockNrOrHash)
 		if err != nil {
-			return nil, errNativeMethodStateError, err
+			return nil, errInternalError, err
 		}
 		balance, err := method.Outputs.Pack(balanceInt.ToInt())
 		if err != nil {
-			return nil, errNativeMethodOutput, err
+			return nil, errInternalError, err
 		}
 		return balance, 0, nil
 	default:
-		return nil, errNativeMethodNotFound, fmt.Errorf("method not found")
+		return nil, errInvalidParams, fmt.Errorf("method not found")
 	}
 }
 
@@ -165,14 +152,14 @@ func doOneCall(backend backend.EVMBackend, blockNrOrHash rpctypes.BlockNumberOrH
 
 	blockNum, err := backend.BlockNumberFromTendermint(blockNrOrHash)
 	if err != nil {
-		result.Code = errUnderlyingDB
+		result.Code = errInternalError
 		result.Err = err.Error()
 		return result, err
 	}
 
 	r, err := backend.DoCall(arg, blockNum)
 	if err != nil {
-		result.Code = errMessageExecuting
+		result.Code = errEvmFailed
 		result.Err = err.Error()
 		return result, err
 	}
