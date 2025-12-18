@@ -208,6 +208,8 @@ which accepts a path for the resulting pprof file.
 	cmd.Flags().String(srvflags.TLSCertPath, "", "the cert.pem file path for the server TLS configuration")
 	cmd.Flags().String(srvflags.TLSKeyPath, "", "the key.pem file path for the server TLS configuration")
 
+	cmd.Flags().String(srvflags.ETCDConfig, "", "config to register with etcd")
+
 	cmd.Flags().Uint64(server.FlagStateSyncSnapshotInterval, 0, "State sync snapshot interval")
 	cmd.Flags().Uint32(server.FlagStateSyncSnapshotKeepRecent, 2, "State sync snapshot to keep")
 
@@ -479,6 +481,9 @@ func startInProcess(svrCtx *server.Context, clientCtx client.Context, opts Start
 				}
 			}
 		}()
+	}
+	if e := StartEtcdRegister(svrCtx, ctx, clientCtx, g, config, idxer); e != nil {
+		logger.Error("failed to register etcd server", "error", e.Error())
 	}
 
 	// At this point it is safe to block the process if we're in query only mode as
