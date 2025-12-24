@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cosmossdk.io/log"
+	pruningtypes "cosmossdk.io/store/pruning/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/evm/rpc/backend"
@@ -217,7 +218,11 @@ func StartEtcdRegister(
 	if err = json.Unmarshal([]byte(config.ETCDConfig), &etcdCfg); err != nil {
 		return fmt.Errorf("unmarshal etcd config failed: %+v", err)
 	}
-	register, err := NewRegister(chainId.ToInt().Uint64(), etcdCfg, false, ctx.Logger.With("module", "etcd-register"))
+	var isArchive = false
+	if config.Config.BaseConfig.Pruning == pruningtypes.PruningOptionNothing {
+		isArchive = true
+	}
+	register, err := NewRegister(chainId.ToInt().Uint64(), etcdCfg, isArchive, ctx.Logger.With("module", "etcd-register"))
 	if err != nil {
 		return err
 	}
