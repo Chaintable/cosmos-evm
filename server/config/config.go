@@ -110,9 +110,10 @@ var evmTracers = []string{"json", "markdown", "struct", "access_list"}
 type Config struct {
 	config.Config `mapstructure:",squash"`
 
-	EVM     EVMConfig     `mapstructure:"evm"`
-	JSONRPC JSONRPCConfig `mapstructure:"json-rpc"`
-	TLS     TLSConfig     `mapstructure:"tls"`
+	EVM        EVMConfig     `mapstructure:"evm"`
+	JSONRPC    JSONRPCConfig `mapstructure:"json-rpc"`
+	TLS        TLSConfig     `mapstructure:"tls"`
+	ETCDConfig string        `mapstructure:"etcd-config"`
 }
 
 // EVMConfig defines the application configuration values for the EVM.

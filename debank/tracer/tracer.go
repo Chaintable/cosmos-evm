@@ -316,7 +316,7 @@ func (t *CallTracer) addTraceAndLog(cf *callFrame, traceAddress []int64) {
 		}
 	}
 	for i := range cf.Calls {
-		if cf.failed() || cf.ParentFailed {
+		if cf.failed() {
 			t.errorTraces = append(t.errorTraces, t.ToTrace(&cf.Calls[i], childTraceAddress(traceAddress, int64(i))))
 		} else {
 			t.traces = append(t.traces, t.ToTrace(&cf.Calls[i], childTraceAddress(traceAddress, int64(i))))

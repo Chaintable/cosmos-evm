@@ -87,3 +87,16 @@ type OneFeeHistory struct {
 	Reward               []*big.Int // each element of the array will have the tip provided to miners for the percentile given
 	GasUsedRatio         float64    // the ratio of gas used to the gas limit for each block
 }
+
+// BlockOverrides is a set of header fields to override.
+type BlockOverrides struct {
+	Number        *hexutil.Big
+	Difficulty    *hexutil.Big // No-op if we're simulating post-merge calls.
+	Time          *hexutil.Uint64
+	GasLimit      *hexutil.Uint64
+	FeeRecipient  *common.Address
+	PrevRandao    *common.Hash
+	BaseFeePerGas *hexutil.Big
+	BlobBaseFee   *hexutil.Big
+	BeaconRoot    *common.Hash
+}
