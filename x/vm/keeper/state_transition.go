@@ -340,8 +340,11 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, msg core.Message, trace
 		ret   []byte // return bytes from evm execution
 		vmErr error  // vm errors do not effect consensus and are therefore not assigned to err
 	)
-
 	stateDB := statedb.New(ctx, k, txConfig)
+	if cfg.StateDB != nil {
+		stateDB = cfg.StateDB
+	}
+
 	evm := k.NewEVM(ctx, msg, cfg, tracer, stateDB)
 
 	leftoverGas := msg.GasLimit
@@ -480,6 +483,10 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, msg core.Message, trace
 	// if the execution reverted, we return the revert reason as the return data
 	if vmError == vm.ErrExecutionReverted.Error() {
 		ret = evm.Interpreter().ReturnData()
+	}
+
+	if cfg.SimulateExec {
+		gasUsed = math.LegacyNewDec(int64(temporaryGasUsed))
 	}
 
 	return &types.MsgEthereumTxResponse{

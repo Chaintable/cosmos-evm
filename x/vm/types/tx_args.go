@@ -64,6 +64,9 @@ type TransactionArgs struct {
 
 	// For SetCodeTxType
 	AuthorizationList []types.SetCodeAuthorization `json:"authorizationList"`
+
+	BlockHash *common.Hash      `json:"blockHash,omitempty"`
+	Args      []TransactionArgs `json:"args,omitempty"`
 }
 
 // GetFrom retrieves the transaction sender address.

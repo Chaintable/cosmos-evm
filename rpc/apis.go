@@ -3,6 +3,9 @@ package rpc
 import (
 	"fmt"
 
+	"github.com/cosmos/evm/rpc/namespaces/ethereum/debank"
+	"github.com/cosmos/evm/rpc/namespaces/ethereum/trace"
+	"github.com/cosmos/evm/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cosmos/evm/rpc/backend"
@@ -15,7 +18,6 @@ import (
 	"github.com/cosmos/evm/rpc/namespaces/ethereum/txpool"
 	"github.com/cosmos/evm/rpc/namespaces/ethereum/web3"
 	"github.com/cosmos/evm/rpc/stream"
-	"github.com/cosmos/evm/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/server"
@@ -36,6 +38,8 @@ const (
 	TxPoolNamespace   = "txpool"
 	DebugNamespace    = "debug"
 	MinerNamespace    = "miner"
+	TraceNamespace    = "trace"
+	DebankNamespace   = "debank"
 
 	apiVersion = "1.0"
 )
@@ -157,6 +161,38 @@ func init() {
 					Version:   apiVersion,
 					Service:   miner.NewPrivateAPI(ctx, evmBackend),
 					Public:    false,
+				},
+			}
+		},
+		TraceNamespace: func(ctx *server.Context,
+			clientCtx client.Context,
+			_ *stream.RPCStream,
+			allowUnprotectedTxs bool,
+			indexer types.EVMTxIndexer,
+		) []rpc.API {
+			evmBackend := backend.NewBackend(ctx, ctx.Logger, clientCtx, allowUnprotectedTxs, indexer)
+			return []rpc.API{
+				{
+					Namespace: "trace",
+					Version:   "1.0",
+					Service:   trace.NewAPI(ctx, ctx.Logger, evmBackend, clientCtx),
+					Public:    true,
+				},
+			}
+		},
+		DebankNamespace: func(ctx *server.Context,
+			clientCtx client.Context,
+			_ *stream.RPCStream,
+			allowUnprotectedTxs bool,
+			indexer types.EVMTxIndexer,
+		) []rpc.API {
+			evmBackend := backend.NewBackend(ctx, ctx.Logger, clientCtx, allowUnprotectedTxs, indexer)
+			return []rpc.API{
+				{
+					Namespace: DebankNamespace,
+					Version:   "1.0",
+					Service:   debank.NewAPI(ctx, evmBackend, clientCtx),
+					Public:    true,
 				},
 			}
 		},
