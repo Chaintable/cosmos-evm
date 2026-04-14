@@ -1,8 +1,9 @@
 package types
 
 const (
-	P256PrecompileAddress   = "0x0000000000000000000000000000000000000100"
-	Bech32PrecompileAddress = "0x0000000000000000000000000000000000000400"
+	P256PrecompileAddress    = "0x0000000000000000000000000000000000000100"
+	Bech32PrecompileAddress  = "0x0000000000000000000000000000000000000400"
+	Ed25519PrecompileAddress = "0x00000000000000000000000000000000000008f3"
 )
 
 const (
@@ -22,6 +23,8 @@ const LiquidStakePrecompileAddress     = "0x000000000000000000000000000000000000
 //
 // NOTE: To be explicit, this list does not include the dynamically registered EVM extensions
 // like the ERC-20 extensions.
+// NOTE: This list MUST be sorted lexicographically by address to match the expected order
+// after params are set (SetParams sorts the precompiles).
 var AvailableStaticPrecompiles = []string{
 	P256PrecompileAddress,
 	Bech32PrecompileAddress,
@@ -33,5 +36,6 @@ var AvailableStaticPrecompiles = []string{
 	GovPrecompileAddress,
 	SlashingPrecompileAddress,
 	EvidencePrecompileAddress,
+	Ed25519PrecompileAddress,
 	LiquidStakePrecompileAddress,
 }
