@@ -6,16 +6,23 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
+	dtracer "github.com/cosmos/evm/debank/tracer"
+	dtypes "github.com/cosmos/evm/debank/types"
+	rpctypes "github.com/cosmos/evm/rpc/types"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	ethparams "github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -236,24 +243,108 @@ func (k Keeper) EthCall(c context.Context, req *types.EthCallRequest) (*types.Ms
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// ApplyMessageWithConfig expect correct nonce set in msg
-	nonce := k.GetNonce(ctx, args.GetFrom())
-	args.Nonce = (*hexutil.Uint64)(&nonce)
+	if len(args.Args) > 0 {
+		simulateResList := make([]types.DebankSingleSimulateResult, 0)
+		txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
+		for i, arg := range args.Args {
+			nonce := k.GetNonce(ctx, arg.GetFrom())
+			arg.Nonce = (*hexutil.Uint64)(&nonce)
+			msg, err := arg.ToMessage(req.GasCap, cfg.BaseFee)
+			if err != nil {
+				simulateResList = append(simulateResList, types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  err.Error(),
+				})
+				continue
+			}
+			tCtx := &tracers.Context{
+				BlockHash:   *args.BlockHash,
+				BlockNumber: big.NewInt(ctx.BlockHeight()),
+				TxIndex:     int(k.GetTxIndexTransient(ctx) + 1),
+				TxHash:      common.BigToHash(big.NewInt(int64(i + 1))),
+			}
+			tracer := dtracer.NewCallTracer(tCtx)
+			cfg.SimulateExec = true
+			// pass true to commit StateDB
+			res, err := k.ApplyMessageWithConfig(ctx, msg, tracer, true, cfg, txConfig)
+			if err != nil {
+				simulateResult := types.DebankSingleSimulateResult{
+					Code: types.SimulateErrorUnKnown,
+					Err:  err.Error(),
+				}
+				if res != nil {
+					simulateResult.GasUsed = res.GasUsed
+				}
+				simulateResList = append(simulateResList, simulateResult)
+				continue
+			}
+			traces := make([]types.DebankTrace, 0)
+			events := make([]types.DebankEvent, 0)
+			for _, trace := range tracer.GetTraces() {
+				traces = append(traces, types.FromTracerTrace(trace))
+			}
+			for _, event := range tracer.GetLogs() {
+				events = append(events, types.FromTracerEvent(event))
+			}
+			simulateResult := types.DebankSingleSimulateResult{
+				Traces: traces,
+				Events: events,
+			}
+			if res != nil {
+				simulateResult.GasUsed = res.GasUsed
+			}
+			if res != nil && res.Failed() {
+				for _, trace := range tracer.GetErrorTraces() {
+					simulateResult.Traces = append(simulateResult.Traces, types.FromTracerTrace(trace))
+				}
+				for _, event := range tracer.GetErrorLogs() {
+					simulateResult.Events = append(simulateResult.Events, types.FromTracerEvent(event))
+				}
+				simulateResult.Code = types.SimulateErrorUnKnown
+				simulateResult.Err = res.VmError
+				if strings.HasPrefix(res.VmError, "execution reverted") {
+					simulateResult.Code = types.SimulateErrorReverted
+					reason, _ := abi.UnpackRevert(res.Revert())
+					if reason != "" {
+						simulateResult.Err = reason
+					}
+				}
+				if strings.HasPrefix(res.VmError, "out of gas") {
+					simulateResult.Code = types.SimulateErrorReverted
+				}
+				if strings.HasPrefix(res.VmError, "insufficient") {
+					simulateResult.Code = types.SimulateErrorInsufficientBalane
+				}
+			}
+			simulateResList = append(simulateResList, simulateResult)
+		}
+		bz, err := json.Marshal(&simulateResList)
+		if err != nil {
+			return nil, err
+		}
+		return &types.MsgEthereumTxResponse{
+			Ret: bz,
+		}, nil
+	} else {
+		// ApplyMessageWithConfig expect correct nonce set in msg
+		nonce := k.GetNonce(ctx, args.GetFrom())
+		args.Nonce = (*hexutil.Uint64)(&nonce)
 
-	msg, err := args.ToMessage(req.GasCap, cfg.BaseFee)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		msg, err := args.ToMessage(req.GasCap, cfg.BaseFee)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+
+		txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
+
+		// pass false to not commit StateDB
+		res, err := k.ApplyMessageWithConfig(ctx, msg, nil, false, cfg, txConfig)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+		return res, nil
 	}
-
-	txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
-
-	// pass false to not commit StateDB
-	res, err := k.ApplyMessageWithConfig(ctx, msg, nil, false, cfg, txConfig)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return res, nil
 }
 
 // EstimateGas implements eth_estimateGas rpc api.
@@ -579,12 +670,13 @@ func (k Keeper) TraceBlock(c context.Context, req *types.QueryTraceBlockRequest)
 
 	txConfig := statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash()))
 
+	commit := len(req.Txs) > 1
 	for i, tx := range req.Txs {
 		result := types.TxTraceResult{}
 		ethTx := tx.AsTransaction()
 		txConfig.TxHash = ethTx.Hash()
 		txConfig.TxIndex = uint(i) //nolint:gosec // G115 // won't exceed uint64
-		traceResult, logIndex, err := k.traceTx(ctx, cfg, txConfig, signer, ethTx, req.TraceConfig, true, nil)
+		traceResult, logIndex, err := k.traceTx(ctx, cfg, txConfig, signer, ethTx, req.TraceConfig, commit, nil)
 		if err != nil {
 			result.Error = err.Error()
 		} else {
@@ -653,7 +745,9 @@ func (k *Keeper) traceTx(
 		TxHash:    txConfig.TxHash,
 	}
 
-	if traceConfig.Tracer != "" {
+	if traceConfig.Tracer == dtracer.Name {
+		tracer = dtracer.NewCallTracer(tCtx)
+	} else if traceConfig.Tracer != "" {
 		if tracer, err = tracers.DefaultDirectory.New(traceConfig.Tracer, tCtx, tracerJSONConfig); err != nil {
 			return nil, 0, status.Error(codes.Internal, err.Error())
 		}
@@ -683,6 +777,11 @@ func (k *Keeper) traceTx(
 	res, err := k.ApplyMessageWithConfig(ctx, *msg, tracer, commitMessage, cfg, txConfig)
 	if err != nil {
 		return nil, 0, status.Error(codes.Internal, err.Error())
+	}
+	baseFee := k.GetBaseFee(ctx)
+	switch t := tracer.(type) {
+	case *dtracer.CallTracer:
+		t.OnTxEnd(msg.From, tx, baseFee, res)
 	}
 
 	var result interface{}
@@ -723,4 +822,75 @@ func (k Keeper) Config(_ context.Context, _ *types.QueryConfigRequest) (*types.Q
 	config.Decimals = uint64(types.GetEVMCoinDecimals())
 
 	return &types.QueryConfigResponse{Config: config}, nil
+}
+
+func genesisAllocToStateDiff(k Keeper, genesisState types.GenesisState) *dtypes.BlockStorageDiff {
+	diff := &dtypes.BlockStorageDiff{}
+	diff.NewAccounts = make([]dtypes.NewAccount, 0)
+	diff.NewCodes = make([]dtypes.NewCode, 0)
+	diff.StorageDiff = make([]dtypes.AccountStorageDiff, 0)
+	diff.DeletedAccounts = make([]common.Hash, 0)
+	ctx := sdk.UnwrapSDKContext(rpctypes.ContextWithHeight(0))
+
+	for _, account := range genesisState.Accounts {
+		address := common.HexToAddress(account.Address)
+		balance := k.GetBalance(ctx, address)
+		code := common.Hex2Bytes(account.Code)
+		diff.NewAccounts = append(diff.NewAccounts, dtypes.NewAccount{
+			Address:  crypto.Keccak256Hash(address.Bytes()[:]),
+			Balance:  balance,
+			Nonce:    0,
+			CodeHash: common.BytesToHash(code),
+		})
+		if len(account.Code) > 0 {
+			diff.NewCodes = append(diff.NewCodes, dtypes.NewCode{
+				CodeHash: common.BytesToHash(code),
+				Code:     code,
+			})
+		}
+		values := make([]dtypes.IndexValuePair, 0)
+		for _, state := range account.Storage {
+			key := common.HexToHash(state.Key)
+			v := common.HexToHash(state.Value)
+			value := uint256.NewInt(0).SetBytes(v.Bytes())
+			values = append(values, dtypes.IndexValuePair{
+				Index: key,
+				Value: value,
+			})
+		}
+		diff.StorageDiff = append(diff.StorageDiff, dtypes.AccountStorageDiff{
+			Address: crypto.Keccak256Hash(address.Bytes()[:]),
+			Values:  values,
+		})
+	}
+	return diff
+}
+
+func onGenesisBlock(k Keeper, block map[string]interface{}, genesisState types.GenesisState) (*dtypes.DebankOutPut, error) {
+	header := dtracer.BuildPilelineBlockHeader(block)
+	blockDiff := genesisAllocToStateDiff(k, genesisState)
+	blockDiff.Hash = header.StateRoot
+	blockDiff.ParentHash = ethtypes.EmptyRootHash
+
+	blockFile := &dtypes.BlockFile{
+		Block:            dtracer.BuildPipelineBlock(block),
+		Txs:              make([]dtypes.Transaction, 0),
+		Events:           make([]dtypes.Event, 0),
+		Traces:           make([]dtypes.Trace, 0),
+		ErrorEvents:      make([]dtypes.Event, 0),
+		ErrorTraces:      make([]dtypes.Trace, 0),
+		StorageContracts: make([]string, 0),
+	}
+
+	for _, acc := range genesisState.Accounts {
+		if len(acc.Storage) > 0 {
+			blockFile.StorageContracts = append(blockFile.StorageContracts, strings.ToLower(acc.Address))
+		}
+	}
+	return &dtypes.DebankOutPut{
+		BlockFile:      blockFile,
+		Header:         header,
+		StateDiff:      blockDiff,
+		ValidationHash: blockFile.Validation().ValidationHash,
+	}, nil
 }
