@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"fmt"
 	"math/big"
 	"sort"
 	"strings"
@@ -16,18 +17,18 @@ import (
 
 func BuildPipelineBlock(rawBlock map[string]interface{}) dtypes.Block {
 	block := dtypes.Block{
-		ID:                    rawBlock["hash"].(hexutil.Bytes).String(),
-		Height:                big.NewInt(int64(rawBlock["number"].(hexutil.Uint64))),
+		ID:                    rawHash(rawBlock["hash"]).Hex(),
+		Height:                rawBig(rawBlock["number"]),
 		ParentID:              rawBlock["parentHash"].(common.Hash).Hex(),
 		BaseFeePerGas:         big.NewInt(0),
 		Miner:                 strings.ToLower(rawBlock["miner"].(common.Address).Hex()),
-		GasLimit:              big.NewInt(int64(rawBlock["gasLimit"].(hexutil.Uint64))),
-		GasUsed:               (*big.Int)(rawBlock["gasUsed"].(*hexutil.Big)),
-		Timestamp:             uint64(rawBlock["timestamp"].(hexutil.Uint64)),
+		GasLimit:              new(big.Int).SetUint64(rawUint64(rawBlock["gasLimit"])),
+		GasUsed:               rawBig(rawBlock["gasUsed"]),
+		Timestamp:             rawUint64(rawBlock["timestamp"]),
 		ProcessStartTimestamp: time.Now().UnixMilli(),
 	}
 	if baseFeePerGas, ok := rawBlock["baseFeePerGas"]; ok {
-		block.BaseFeePerGas = (*big.Int)(baseFeePerGas.(*hexutil.Big))
+		block.BaseFeePerGas = rawBig(baseFeePerGas)
 	}
 	return block
 }
@@ -74,27 +75,84 @@ func BuildPipelineTransaction(
 
 func BuildPilelineBlockHeader(header map[string]interface{}) *dtypes.Header {
 	blockHeader := dtypes.Header{
-		Number:           (*hexutil.Big)(big.NewInt(int64(header["number"].(hexutil.Uint64)))),
-		Hash:             common.BytesToHash(header["hash"].(hexutil.Bytes)),
+		Number:           rawHexBig(header["number"]),
+		Hash:             rawHash(header["hash"]),
 		ParentHash:       header["parentHash"].(common.Hash),
 		Nonce:            header["nonce"].(ethtypes.BlockNonce),
 		MixHash:          header["mixHash"].(common.Hash),
 		Sha3Uncles:       header["sha3Uncles"].(common.Hash),
 		LogsBloom:        header["logsBloom"].(ethtypes.Bloom),
-		StateRoot:        common.BytesToHash(header["stateRoot"].(hexutil.Bytes)),
+		StateRoot:        rawHash(header["stateRoot"]),
 		Miner:            header["miner"].(common.Address),
-		Difficulty:       header["difficulty"].(*hexutil.Big),
+		Difficulty:       rawHexBig(header["difficulty"]),
 		ExtraData:        hexutil.Bytes{},
-		GasLimit:         header["gasLimit"].(hexutil.Uint64),
-		GasUsed:          hexutil.Uint64((*big.Int)(header["gasUsed"].(*hexutil.Big)).Uint64()),
-		Timestamp:        header["timestamp"].(hexutil.Uint64),
+		GasLimit:         hexutil.Uint64(rawUint64(header["gasLimit"])),
+		GasUsed:          hexutil.Uint64(rawUint64(header["gasUsed"])),
+		Timestamp:        hexutil.Uint64(rawUint64(header["timestamp"])),
 		TransactionsRoot: header["transactionsRoot"].(common.Hash),
 		ReceiptsRoot:     header["receiptsRoot"].(common.Hash),
 	}
 	if baseFeePerGas, ok := header["baseFeePerGas"]; ok {
-		blockHeader.BaseFeePerGas = baseFeePerGas.(*hexutil.Big)
+		blockHeader.BaseFeePerGas = rawHexBig(baseFeePerGas)
 	}
 	return &blockHeader
+}
+
+func rawBig(v interface{}) *big.Int {
+	switch value := v.(type) {
+	case *hexutil.Big:
+		if value == nil {
+			return big.NewInt(0)
+		}
+		return new(big.Int).Set((*big.Int)(value))
+	case hexutil.Big:
+		return new(big.Int).Set((*big.Int)(&value))
+	case *big.Int:
+		if value == nil {
+			return big.NewInt(0)
+		}
+		return new(big.Int).Set(value)
+	case big.Int:
+		return new(big.Int).Set(&value)
+	case hexutil.Uint64:
+		return new(big.Int).SetUint64(uint64(value))
+	case uint64:
+		return new(big.Int).SetUint64(value)
+	case uint:
+		return new(big.Int).SetUint64(uint64(value))
+	case int64:
+		return big.NewInt(value)
+	case int:
+		return big.NewInt(int64(value))
+	default:
+		panic(fmt.Sprintf("unsupported numeric field type %T", v))
+	}
+}
+
+func rawHexBig(v interface{}) *hexutil.Big {
+	return (*hexutil.Big)(rawBig(v))
+}
+
+func rawUint64(v interface{}) uint64 {
+	return rawBig(v).Uint64()
+}
+
+func rawHash(v interface{}) common.Hash {
+	switch value := v.(type) {
+	case common.Hash:
+		return value
+	case *common.Hash:
+		if value == nil {
+			return common.Hash{}
+		}
+		return *value
+	case hexutil.Bytes:
+		return common.BytesToHash(value)
+	case []byte:
+		return common.BytesToHash(value)
+	default:
+		panic(fmt.Sprintf("unsupported hash field type %T", v))
+	}
 }
 
 func BuildBlockStateDiff(parentRoot common.Hash, root common.Hash, diffs []dtypes.TransactionStateDiff) dtypes.BlockStorageDiff {
