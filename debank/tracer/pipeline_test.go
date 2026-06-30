@@ -1,10 +1,12 @@
 package tracer
 
 import (
+	"math/big"
 	"testing"
 
 	dtypes "github.com/cosmos/evm/debank/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -22,6 +24,54 @@ func addAccount(diff *dtypes.TransactionStateDiff, address common.Hash, codeHash
 
 func deleteAccount(diff *dtypes.TransactionStateDiff, address common.Hash) {
 	diff.DeletedAccounts = append(diff.DeletedAccounts, address)
+}
+
+func TestBuildPipelineBlockWithRPCMarshalHeaderTypes(t *testing.T) {
+	blockHash := common.HexToHash("0x010203")
+	parentHash := common.HexToHash("0x040506")
+	stateRoot := common.HexToHash("0x070809")
+	txRoot := common.HexToHash("0x101112")
+	receiptRoot := common.HexToHash("0x131415")
+	miner := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	rawBlock := map[string]interface{}{
+		"number":           (*hexutil.Big)(big.NewInt(21842796)),
+		"hash":             hexutil.Bytes(blockHash.Bytes()),
+		"parentHash":       parentHash,
+		"nonce":            types.BlockNonce{},
+		"mixHash":          common.Hash{},
+		"sha3Uncles":       types.EmptyUncleHash,
+		"logsBloom":        types.Bloom{},
+		"stateRoot":        stateRoot,
+		"miner":            miner,
+		"difficulty":       (*hexutil.Big)(big.NewInt(0)),
+		"gasLimit":         hexutil.Uint64(30_000_000),
+		"gasUsed":          (*hexutil.Big)(big.NewInt(123456)),
+		"timestamp":        hexutil.Uint64(1782820000),
+		"transactionsRoot": txRoot,
+		"receiptsRoot":     receiptRoot,
+		"baseFeePerGas":    (*hexutil.Big)(big.NewInt(7)),
+	}
+
+	block := BuildPipelineBlock(rawBlock)
+	require.Equal(t, blockHash.Hex(), block.ID)
+	require.Equal(t, big.NewInt(21842796), block.Height)
+	require.Equal(t, parentHash.Hex(), block.ParentID)
+	require.Equal(t, big.NewInt(30_000_000), block.GasLimit)
+	require.Equal(t, big.NewInt(123456), block.GasUsed)
+	require.Equal(t, uint64(1782820000), block.Timestamp)
+	require.Equal(t, big.NewInt(7), block.BaseFeePerGas)
+
+	header := BuildPilelineBlockHeader(rawBlock)
+	require.Equal(t, (*hexutil.Big)(big.NewInt(21842796)), header.Number)
+	require.Equal(t, blockHash, header.Hash)
+	require.Equal(t, stateRoot, header.StateRoot)
+	require.Equal(t, hexutil.Uint64(30_000_000), header.GasLimit)
+	require.Equal(t, hexutil.Uint64(123456), header.GasUsed)
+	require.Equal(t, hexutil.Uint64(1782820000), header.Timestamp)
+	require.Equal(t, txRoot, header.TransactionsRoot)
+	require.Equal(t, receiptRoot, header.ReceiptsRoot)
+	require.Equal(t, (*hexutil.Big)(big.NewInt(7)), header.BaseFeePerGas)
 }
 
 func TestBuildBlockStateDiff(t *testing.T) {
