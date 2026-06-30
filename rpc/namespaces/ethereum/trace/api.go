@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	runtimeDebug "runtime/debug"
 	"strings"
 	"sync"
 
@@ -77,6 +78,18 @@ func NewAPI(
 }
 
 func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.BlockNumberOrHash) (*dtypes.DebankOutPut, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			api.logger.Error(
+				"trace_debankBlock panic",
+				"request", fmt.Sprintf("%+v", blockNrOrHash),
+				"panic", fmt.Sprintf("%v", r),
+				"stack", string(runtimeDebug.Stack()),
+			)
+			panic(r)
+		}
+	}()
+
 	blockHeight, err := api.backend.BlockNumberFromComet(blockNrOrHash)
 	if err != nil {
 		return nil, err
@@ -106,10 +119,12 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		api.logger.Debug("RPCBlockFromCometBlock failed", "height", blockHeight, "error", err.Error())
 		return nil, err
 	}
+	logDebankBlockFieldTypes(api.logger, blockHeight, block)
 	if blockHeight == 1 {
 		return api.onGenesisBlock(block)
 	}
 	transactions := block["transactions"].([]interface{})
+	logDebankBlockTransactionTypes(api.logger, blockHeight, transactions)
 	stateHeader := dtracer.BuildPilelineBlockHeader(block)
 	parentHeader, err := api.backend.HeaderByNumber(blockHeight - 1)
 	if err != nil {
@@ -249,4 +264,47 @@ func (api API) addGasUsedStateDiff(txFromAddress map[common.Address]struct{}, ne
 		resStorageChange = append(resStorageChange, strings.ToLower(address.String()))
 	}
 	return resNewAccount, resStorageChange, nil
+}
+
+func logDebankBlockFieldTypes(logger log.Logger, blockHeight rpctypes.BlockNumber, block map[string]interface{}) {
+	transactionsLen := -1
+	if transactions, ok := block["transactions"].([]interface{}); ok {
+		transactionsLen = len(transactions)
+	}
+
+	logger.Info(
+		"trace_debankBlock rpc block field types",
+		"height", blockHeight,
+		"hashType", fmt.Sprintf("%T", block["hash"]),
+		"numberType", fmt.Sprintf("%T", block["number"]),
+		"numberValue", fmt.Sprintf("%v", block["number"]),
+		"parentHashType", fmt.Sprintf("%T", block["parentHash"]),
+		"stateRootType", fmt.Sprintf("%T", block["stateRoot"]),
+		"stateRootValue", fmt.Sprintf("%v", block["stateRoot"]),
+		"gasLimitType", fmt.Sprintf("%T", block["gasLimit"]),
+		"gasUsedType", fmt.Sprintf("%T", block["gasUsed"]),
+		"timestampType", fmt.Sprintf("%T", block["timestamp"]),
+		"transactionsType", fmt.Sprintf("%T", block["transactions"]),
+		"transactionsLen", transactionsLen,
+	)
+}
+
+func logDebankBlockTransactionTypes(logger log.Logger, blockHeight rpctypes.BlockNumber, transactions []interface{}) {
+	const maxSamples = 20
+	limit := len(transactions)
+	if limit > maxSamples {
+		limit = maxSamples
+	}
+
+	samples := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		samples = append(samples, fmt.Sprintf("%d:%T", i, transactions[i]))
+	}
+
+	logger.Info(
+		"trace_debankBlock transaction field types",
+		"height", blockHeight,
+		"count", len(transactions),
+		"samples", strings.Join(samples, ","),
+	)
 }
