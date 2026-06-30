@@ -77,7 +77,7 @@ func NewAPI(
 }
 
 func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.BlockNumberOrHash) (*dtypes.DebankOutPut, error) {
-	blockHeight, err := api.backend.BlockNumberFromTendermint(blockNrOrHash)
+	blockHeight, err := api.backend.BlockNumberFromComet(blockNrOrHash)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +85,10 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		return nil, fmt.Errorf("can't trace block 0")
 	}
 
-	resBlock, err := api.backend.TendermintBlockByNumber(blockHeight)
+	resBlock, err := api.backend.CometBlockByNumber(blockHeight)
 	if err != nil {
-		return nil, nil
+		api.logger.Debug("get block failed", "height", blockHeight, "error", err.Error())
+		return nil, err
 	}
 
 	// return if requested block height is greater than the current one
@@ -95,14 +96,14 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		return nil, fmt.Errorf("cannot trace nil block")
 	}
 
-	blockRes, err := api.backend.TendermintBlockResultByNumber(&resBlock.Block.Height)
+	blockRes, err := api.backend.CometBlockResultByNumber(&resBlock.Block.Height)
 	if err != nil {
-		api.logger.Debug("failed to fetch block result from Tendermint", "height", blockHeight, "error", err.Error())
-		return nil, fmt.Errorf("failed to fetch block result from Tendermint")
+		api.logger.Debug("failed to fetch block result from CometBFT", "height", blockHeight, "error", err.Error())
+		return nil, fmt.Errorf("failed to fetch block result from CometBFT")
 	}
-	block, err := api.backend.RPCBlockFromTendermintBlock(resBlock, blockRes, true)
+	block, err := api.backend.RPCBlockFromCometBlock(resBlock, blockRes, true)
 	if err != nil {
-		api.logger.Debug("GetEthBlockFromTendermint failed", "height", blockHeight, "error", err.Error())
+		api.logger.Debug("RPCBlockFromCometBlock failed", "height", blockHeight, "error", err.Error())
 		return nil, err
 	}
 	if blockHeight == 1 {
@@ -123,7 +124,7 @@ func (api *API) DebankBlockRaw(ctx context.Context, blockNrOrHash rpctypes.Block
 		ErrorTraces:      make([]dtypes.Trace, 0),
 		StorageContracts: make([]string, 0),
 	}
-	traceResults, err := api.backend.TraceBlock(blockHeight, &evmtypes.TraceConfig{Tracer: dtracer.Name}, resBlock)
+	traceResults, err := api.backend.TraceBlock(blockHeight, &rpctypes.TraceConfig{TraceConfig: evmtypes.TraceConfig{Tracer: dtracer.Name}}, resBlock)
 	if err != nil {
 		return nil, err
 	}

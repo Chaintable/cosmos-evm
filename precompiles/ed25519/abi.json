@@ -1,7 +1,7 @@
 {
   "_format": "hh-sol-artifact-1",
   "contractName": "Ed25519I",
-  "sourceName": "contracts/precompiles/Ed25519I.sol",
+  "sourceName": "solidity/precompiles/ed25519/Ed25519I.sol",
   "abi": [
     {
       "inputs": [

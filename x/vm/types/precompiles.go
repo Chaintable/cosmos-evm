@@ -14,17 +14,14 @@ const (
 	BankPrecompileAddress         = "0x0000000000000000000000000000000000000804"
 	GovPrecompileAddress          = "0x0000000000000000000000000000000000000805"
 	SlashingPrecompileAddress     = "0x0000000000000000000000000000000000000806"
-	EvidencePrecompileAddress     = "0x0000000000000000000000000000000000000807"
 )
 
-const LiquidStakePrecompileAddress     = "0x0000000000000000000000000000000000001600"
+const LiquidStakePrecompileAddress = "0x0000000000000000000000000000000000001600"
 
 // AvailableStaticPrecompiles defines the full list of all available EVM extension addresses.
 //
 // NOTE: To be explicit, this list does not include the dynamically registered EVM extensions
 // like the ERC-20 extensions.
-// NOTE: This list MUST be sorted lexicographically by address to match the expected order
-// after params are set (SetParams sorts the precompiles).
 var AvailableStaticPrecompiles = []string{
 	P256PrecompileAddress,
 	Bech32PrecompileAddress,
@@ -35,7 +32,6 @@ var AvailableStaticPrecompiles = []string{
 	BankPrecompileAddress,
 	GovPrecompileAddress,
 	SlashingPrecompileAddress,
-	EvidencePrecompileAddress,
 	Ed25519PrecompileAddress,
 	LiquidStakePrecompileAddress,
 }

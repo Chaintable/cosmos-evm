@@ -463,205 +463,6 @@ func (k Keeper) RedelegateWithCap(
 	return msgRedelegateResponse.CompletionTime, nil
 }
 
-// LSMDelegate captures a staked amount from existing delegation using LSM, re-stakes from proxyAcc and
-// mints gTAC worth of stk coin value according to NetAmount and performs LiquidDelegate.
-func (k Keeper) LSMDelegate(
-	ctx sdk.Context,
-	delegator sdk.AccAddress,
-	validator sdk.ValAddress,
-	proxyAcc sdk.AccAddress,
-	preLsmStake sdk.Coin,
-) (gTACMintAmount math.Int, err error) {
-	params := k.GetParams(ctx)
-
-	if params.ModulePaused {
-		return math.ZeroInt(), types.ErrModulePaused
-	} else if params.LsmDisabled {
-		return math.ZeroInt(), types.ErrDisabledLSM
-	}
-
-	// check minimum liquid stake amount
-	if preLsmStake.Amount.LT(params.MinLiquidStakeAmount) {
-		return math.ZeroInt(), types.ErrLessThanMinLiquidStakeAmount
-	}
-
-	// check bond denomination
-	bondDenom, err := k.stakingKeeper.BondDenom(ctx)
-	if err != nil {
-		return math.ZeroInt(), err
-	}
-	if preLsmStake.Denom != bondDenom {
-		return math.ZeroInt(), errorsmod.Wrapf(
-			types.ErrInvalidBondDenom, "invalid coin denomination: got %s, expected %s", preLsmStake.Denom, bondDenom,
-		)
-	}
-
-	whitelistedValsMap := types.GetWhitelistedValsMap(params.WhitelistedValidators)
-	activeVals := k.GetActiveLiquidValidators(ctx, whitelistedValsMap)
-
-	if activeVals.Len() == 0 {
-		return math.ZeroInt(), types.ErrActiveLiquidValidatorsNotExists
-	}
-
-	totalActiveWeight := activeVals.TotalWeight(whitelistedValsMap)
-	activeWeightQuorum := math.LegacyNewDecFromInt(totalActiveWeight).Quo(
-		math.LegacyNewDecFromInt(types.TotalValidatorWeight),
-	)
-	if activeWeightQuorum.LT(types.ActiveLiquidValidatorsWeightQuorum) {
-		k.Logger(ctx).Error(
-			"active liquid validators weight quorum not reached",
-			types.ActiveWeightQuorumKeyVal,
-			activeWeightQuorum.String(),
-			types.MinActiveWeightQuorumKeyVal,
-			types.ActiveLiquidValidatorsWeightQuorum.String(),
-		)
-
-		return math.ZeroInt(), errorsmod.Wrapf(
-			types.ErrActiveLiquidValidatorsWeightQuorumNotReached, "%s < %s",
-			activeWeightQuorum.String(), types.ActiveLiquidValidatorsWeightQuorum.String(),
-		)
-	}
-
-	if !whitelistedValsMap.IsListed(validator.String()) {
-		return math.ZeroInt(), types.ErrLiquidValidatorsNotExists.Wrap("delegation from a non allowed validator")
-	}
-
-	// NetAmount must be calculated before send
-	nas, err := k.GetNetAmountState(ctx)
-	if err != nil {
-		return math.ZeroInt(), err
-	}
-
-	// perform an LSM tokenize->bank send->redeem flow: moving delegation from user's account onto proxyAcc
-
-	lsmTokenizeMsg := &stakingtypes.MsgTokenizeShares{
-		DelegatorAddress:    delegator.String(),
-		ValidatorAddress:    validator.String(),
-		Amount:              preLsmStake,
-		TokenizedShareOwner: proxyAcc.String(),
-	}
-
-	handler := k.router.Handler(lsmTokenizeMsg)
-	if handler == nil {
-		k.Logger(ctx).Error("failed to find tokenize handler")
-
-		return math.ZeroInt(), sdkerrors.ErrUnknownRequest.Wrapf("unrecognized message route: %s", sdk.MsgTypeURL(lsmTokenizeMsg))
-	}
-
-	// [1] tokenize delegation into LSM shares
-	msgResp, err := handler(ctx, lsmTokenizeMsg)
-	if err != nil {
-		k.Logger(ctx).Error(
-			"failed to execute tokenize shares message",
-			types.ErrorKeyVal,
-			err,
-			types.MsgKeyVal,
-			lsmTokenizeMsg.String(),
-		)
-
-		return math.ZeroInt(), types.ErrLSMTokenizeFailed.Wrapf("error: %s; message: %v", err.Error(), lsmTokenizeMsg)
-	}
-	ctx.EventManager().EmitEvents(msgResp.GetEvents())
-
-	if len(msgResp.MsgResponses) != 1 {
-		return math.ZeroInt(), errorsmod.Wrapf(
-			types.ErrInvalidResponse,
-			"expected msg response should be exactly 1, got: %v, responses: %v",
-			len(msgResp.MsgResponses), msgResp.MsgResponses,
-		)
-	}
-
-	var lsmTokenizeResp stakingtypes.MsgTokenizeSharesResponse
-	if err = k.cdc.Unmarshal(msgResp.MsgResponses[0].Value, &lsmTokenizeResp); err != nil {
-		return math.ZeroInt(), errorsmod.Wrapf(
-			sdkerrors.ErrJSONUnmarshal,
-			"cannot unmarshal tokenize share tx response message: %v",
-			err,
-		)
-	}
-
-	// [2] send LSM shares to proxyAcc
-	err = k.bankKeeper.SendCoins(ctx, delegator, proxyAcc, sdk.NewCoins(lsmTokenizeResp.Amount))
-	if err != nil {
-		return gTACMintAmount, err
-	}
-
-	lsmRedeemMsg := &stakingtypes.MsgRedeemTokensForShares{
-		DelegatorAddress: proxyAcc.String(),
-		Amount:           lsmTokenizeResp.Amount,
-	}
-
-	handler = k.router.Handler(lsmRedeemMsg)
-	if handler == nil {
-		k.Logger(ctx).Error("failed to find redeem handler")
-
-		return math.ZeroInt(), sdkerrors.ErrUnknownRequest.Wrapf("unrecognized message route: %s", sdk.MsgTypeURL(lsmRedeemMsg))
-	}
-
-	// [3] redeem LSM shares from proxyAcc, to obtain a delegation
-	msgResp, err = handler(ctx, lsmRedeemMsg)
-	if err != nil {
-		k.Logger(ctx).Error(
-			"failed to execute redeem tokens for shares message",
-			types.ErrorKeyVal,
-			err,
-			types.MsgKeyVal,
-			lsmRedeemMsg.String(),
-		)
-
-		return math.ZeroInt(), types.ErrLSMRedeemFailed.Wrapf("error: %s; message: %v", err.Error(), lsmRedeemMsg)
-	}
-	ctx.EventManager().EmitEvents(msgResp.GetEvents())
-
-	if len(msgResp.MsgResponses) != 1 {
-		return math.ZeroInt(), errorsmod.Wrapf(
-			types.ErrInvalidResponse,
-			"expected msg response should be exactly 1, got: %v, responses: %v",
-			len(msgResp.MsgResponses), msgResp.MsgResponses,
-		)
-	}
-
-	var lsmRedeemResp stakingtypes.MsgRedeemTokensForSharesResponse
-	if err = k.cdc.Unmarshal(msgResp.MsgResponses[0].Value, &lsmRedeemResp); err != nil {
-		return math.ZeroInt(), errorsmod.Wrapf(
-			sdkerrors.ErrJSONUnmarshal,
-			"cannot unmarshal redeem tokens for shares tx response message: %v",
-			err,
-		)
-	}
-
-	// mint gtac, MintAmount = TotalSupply * StakeAmount/NetAmount
-	liquidBondDenom := k.LiquidBondDenom(ctx)
-	gTACMintAmount = lsmRedeemResp.Amount.Amount
-
-	if nas.GtacTotalSupply.IsPositive() {
-		gTACMintAmount = types.NativeTokenToGTAC(
-			gTACMintAmount,
-			nas.GtacTotalSupply,
-			nas.NetAmount,
-		)
-	}
-
-	if !gTACMintAmount.IsPositive() {
-		return math.ZeroInt(), types.ErrTooSmallLiquidStakeAmount
-	}
-
-	// mint gTAC on module acc
-	mintCoin := sdk.NewCoins(sdk.NewCoin(liquidBondDenom, gTACMintAmount))
-	err = k.bankKeeper.MintCoins(ctx, types.ModuleName, mintCoin)
-	if err != nil {
-		return gTACMintAmount, err
-	}
-
-	// send gTAC to delegator acc
-	err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, delegator, mintCoin)
-	if err != nil {
-		return gTACMintAmount, err
-	}
-
-	return gTACMintAmount, err
-}
-
 // LiquidDelegate delegates staking amount to active validators by proxy account.
 func (k Keeper) LiquidDelegate(ctx sdk.Context, proxyAcc sdk.AccAddress, activeVals types.ActiveLiquidValidators, stakingAmt math.Int, whitelistedValsMap types.WhitelistedValsMap) (err error) {
 	// crumb may occur due to a decimal point error in dividing the staking amount into the weight of liquid validators, It added on first active liquid validator
@@ -733,38 +534,9 @@ func (k Keeper) LiquidUnstake(
 		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), types.ErrTooSmallLiquidUnstakingAmount
 	}
 
-	// burn gtac
-	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, liquidStaker, types.ModuleName, sdk.NewCoins(unstakingGTAC))
-	if err != nil {
-		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
-	}
-	err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, sdk.NewCoins(sdk.NewCoin(liquidBondDenom, unstakingGTAC.Amount)))
-	if err != nil {
-		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
-	}
-
 	liquidVals := k.GetAllLiquidValidators(ctx)
 	totalLiquidTokens, liquidTokenMap := liquidVals.TotalLiquidTokens(ctx, k.stakingKeeper, false)
-
-	// if no totalLiquidTokens, withdraw directly from balance of proxy acc
 	if !totalLiquidTokens.IsPositive() {
-		if nas.ProxyAccBalance.GTE(unbondingAmountInt) {
-			err = k.bankKeeper.SendCoins(
-				ctx,
-				types.LiquidStakeProxyAcc,
-				liquidStaker,
-				sdk.NewCoins(sdk.NewCoin(
-					bondDenom,
-					unbondingAmountInt,
-				)),
-			)
-			if err != nil {
-				return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
-			}
-
-			return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, unbondingAmountInt, nil
-		}
-
 		k.Logger(ctx).Error(
 			"non-positive total liquid tokens",
 			types.ValidatorsKeyVal,
@@ -773,11 +545,9 @@ func (k Keeper) LiquidUnstake(
 			totalLiquidTokens.String(),
 		)
 
-		// error case where there is a quantity that are unbonding balance or remaining rewards that is not re-stake or withdrawn in netAmount.
 		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), types.ErrInsufficientProxyAccBalance
 	}
 
-	// fail when no liquid validators to unbond
 	if liquidVals.Len() == 0 {
 		k.Logger(ctx).Error(
 			"no liquid validators to unbond",
@@ -797,6 +567,24 @@ func (k Keeper) LiquidUnstake(
 		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), types.ErrTooSmallLiquidUnstakingAmount
 	}
 
+	totalTruncatedUnbondingAmount := math.ZeroInt()
+	for _, amount := range unbondingAmounts {
+		totalTruncatedUnbondingAmount = totalTruncatedUnbondingAmount.Add(amount.TruncateInt())
+	}
+	if !totalTruncatedUnbondingAmount.IsPositive() {
+		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), types.ErrTooSmallLiquidUnstakingAmount
+	}
+
+	// burn gtac
+	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, liquidStaker, types.ModuleName, sdk.NewCoins(unstakingGTAC))
+	if err != nil {
+		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
+	}
+	err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, sdk.NewCoins(sdk.NewCoin(liquidBondDenom, unstakingGTAC.Amount)))
+	if err != nil {
+		return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
+	}
+
 	totalReturnAmount := math.ZeroInt()
 
 	var ubdTime time.Time
@@ -812,7 +600,8 @@ func (k Keeper) LiquidUnstake(
 		var weightedShare math.LegacyDec
 
 		// calculate delShares from tokens with validation
-		weightedShare, err = k.stakingKeeper.ValidateUnbondAmount(ctx, proxyAcc, val.GetOperator(), unbondingAmounts[i].TruncateInt())
+		unbondAmt := unbondingAmounts[i].TruncateInt()
+		weightedShare, err = k.stakingKeeper.ValidateUnbondAmount(ctx, proxyAcc, val.GetOperator(), unbondAmt)
 		if err != nil {
 			k.Logger(ctx).Error(
 				"failed to validate unbond amount",
@@ -821,7 +610,7 @@ func (k Keeper) LiquidUnstake(
 				types.ValidatorKeyVal,
 				val.GetOperator().String(),
 				types.AmountKeyVal,
-				unbondingAmounts[i].TruncateInt().String(),
+				unbondAmt.String(),
 			)
 
 			return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
@@ -832,7 +621,7 @@ func (k Keeper) LiquidUnstake(
 		}
 
 		// unbond with weightedShare
-		ubdTime, returnAmount, ubd, err = k.LiquidUnbond(ctx, proxyAcc, liquidStaker, val.GetOperator(), weightedShare, true, sdk.NewCoin(bondDenom, unbondingAmounts[i].TruncateInt()))
+		ubdTime, returnAmount, ubd, err = k.LiquidUnbond(ctx, proxyAcc, liquidStaker, val.GetOperator(), weightedShare, true, sdk.NewCoin(bondDenom, unbondAmt))
 		if err != nil {
 			return time.Time{}, math.ZeroInt(), []stakingtypes.UnbondingDelegation{}, math.ZeroInt(), err
 		}
@@ -955,7 +744,7 @@ func (k Keeper) CheckDelegationStates(ctx sdk.Context, proxyAcc sdk.AccAddress) 
 			valAddr := del.GetValidatorAddr()
 			valAddrObj, parseErr := sdk.ValAddressFromBech32(valAddr)
 			if parseErr != nil {
-				iterationErr = errors.Wrapf(err, "failed to convert val address from bech32")
+				iterationErr = errors.Wrapf(parseErr, "failed to convert val address %q from bech32", valAddr)
 				return true
 			}
 
@@ -993,9 +782,10 @@ func (k Keeper) CheckDelegationStates(ctx sdk.Context, proxyAcc sdk.AccAddress) 
 	return totalRewards, totalDelShares, totalLiquidTokens, nil
 }
 
-func (k Keeper) WithdrawLiquidRewards(ctx sdk.Context, proxyAcc sdk.AccAddress) {
+func (k Keeper) WithdrawLiquidRewards(ctx sdk.Context, proxyAcc sdk.AccAddress) error {
+	var iterationErr error
 	// iterate over all the delegations (even those out of the active set) and withdraw rewards
-	k.stakingKeeper.IterateDelegations(
+	err := k.stakingKeeper.IterateDelegations(
 		ctx, proxyAcc,
 		func(_ int64, del stakingtypes.DelegationI) (stop bool) {
 			// construct the withdrawal rewards message
@@ -1007,7 +797,8 @@ func (k Keeper) WithdrawLiquidRewards(ctx sdk.Context, proxyAcc sdk.AccAddress) 
 			// run the message handler
 			handler := k.router.Handler(msgWithdraw)
 			if handler == nil {
-				k.Logger(ctx).Error("could not find distribution handler for withdraw rewards msg")
+				iterationErr = errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "unrecognized message route: %s", sdk.MsgTypeURL(msgWithdraw))
+				k.Logger(ctx).Error("could not find distribution handler for withdraw rewards msg", types.ErrorKeyVal, iterationErr)
 				return true
 			}
 			res, err := handler(ctx, msgWithdraw)
@@ -1028,6 +819,10 @@ func (k Keeper) WithdrawLiquidRewards(ctx sdk.Context, proxyAcc sdk.AccAddress) 
 			return false
 		},
 	)
+	if err != nil {
+		return errors.Wrapf(err, "failed to iterate delegations")
+	}
+	return iterationErr
 }
 
 // GetLiquidValidator get a single liquid validator

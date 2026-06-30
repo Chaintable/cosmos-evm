@@ -171,12 +171,12 @@ func (avs ActiveLiquidValidators) TotalWeight(whitelistedValsMap WhitelistedVals
 
 // NativeTokenToGTAC returns GtacTotalSupply * nativeTokenAmount / netAmount
 func NativeTokenToGTAC(nativeTokenAmount, gTACTotalSupplyAmount math.Int, netAmount math.LegacyDec) (gTACAmount math.Int) {
-	return math.LegacyNewDecFromInt(gTACTotalSupplyAmount).MulTruncate(math.LegacyNewDecFromInt(nativeTokenAmount)).QuoTruncate(netAmount.TruncateDec()).TruncateInt()
+	return math.LegacyNewDecFromInt(gTACTotalSupplyAmount).MulTruncate(math.LegacyNewDecFromInt(nativeTokenAmount)).QuoTruncate(netAmount).TruncateInt()
 }
 
 // GTACToNativeToken returns gTACAmount * netAmount / GtacTotalSupply with truncations
 func GTACToNativeToken(gTACAmount, gTACTotalSupplyAmount math.Int, netAmount math.LegacyDec) (nativeTokenAmount math.LegacyDec) {
-	return math.LegacyNewDecFromInt(gTACAmount).MulTruncate(netAmount).Quo(math.LegacyNewDecFromInt(gTACTotalSupplyAmount)).TruncateDec()
+	return math.LegacyNewDecFromInt(gTACAmount).MulTruncate(netAmount).QuoTruncate(math.LegacyNewDecFromInt(gTACTotalSupplyAmount)).TruncateDec()
 }
 
 // DeductFeeRate returns Input * (1-FeeRate) with truncations

@@ -8,10 +8,6 @@ import (
 	"github.com/holiman/uint256"
 
 	"github.com/cosmos/evm/x/vm/types"
-
-	storetypes "cosmossdk.io/store/types"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // Account is the Ethereum consensus representation of accounts.
@@ -31,12 +27,20 @@ func NewEmptyAccount() *Account {
 }
 
 // IsContract returns if the account contains contract code.
-func (acct Account) IsContract() bool {
+func (acct Account) HasCodeHash() bool {
 	return !types.IsEmptyCodeHash(acct.CodeHash)
 }
 
 // Storage represents in-memory cache/buffer of contract storage.
 type Storage map[common.Hash]common.Hash
+
+func (s Storage) Copy() Storage {
+	cpy := make(Storage, len(s))
+	for key, value := range s {
+		cpy[key] = value
+	}
+	return cpy
+}
 
 // SortedKeys sort the keys for deterministic iteration
 func (s Storage) SortedKeys() []common.Hash {
@@ -50,14 +54,6 @@ func (s Storage) SortedKeys() []common.Hash {
 	return keys
 }
 
-func (s Storage) Copy() Storage {
-	cpy := make(Storage, len(s))
-	for key, value := range s {
-		cpy[key] = value
-	}
-	return cpy
-}
-
 // stateObject is the state of an account
 type stateObject struct {
 	db *StateDB
@@ -68,12 +64,16 @@ type stateObject struct {
 	// state storage
 	originStorage Storage
 	dirtyStorage  Storage
+	// overridden state, when not nil, replace the whole committed state,
+	// mainly to support the stateOverrides in eth_call.
+	overrideStorage Storage
 
 	address common.Address
 
 	// flags
-	dirtyCode bool
-	suicided  bool
+	dirtyCode      bool
+	selfDestructed bool
+	newContract    bool
 }
 
 // newObject creates a state object.
@@ -102,47 +102,39 @@ func (s *stateObject) empty() bool {
 		types.IsEmptyCodeHash(s.account.CodeHash)
 }
 
-func (s *stateObject) markSuicided() {
-	s.suicided = true
+func (s *stateObject) markSelfDestructed() {
+	s.selfDestructed = true
 }
 
 // AddBalance adds amount to s's balance.
 // It is used to add funds to the destination account of a transfer.
-func (s *stateObject) AddBalance(amount *uint256.Int) {
-	amount = types.AdjustExtraDecimalsUint256(amount)
-	if amount.Sign() == 0 {
-		return
+func (s *stateObject) AddBalance(amount *uint256.Int) uint256.Int {
+	if amount.IsZero() {
+		return *(s.Balance())
 	}
-	s.SetBalance(new(uint256.Int).Add(s.Balance(), amount))
+	return s.SetBalance(new(uint256.Int).Add(s.Balance(), amount))
 }
 
 // SubBalance removes amount from s's balance.
 // It is used to remove funds from the origin account of a transfer.
-func (s *stateObject) SubBalance(amount *uint256.Int) {
-	amount = types.AdjustExtraDecimalsUint256(amount)
-	if amount.Sign() == 0 {
-		return
+// Returns the previous balance
+func (s *stateObject) SubBalance(amount *uint256.Int) uint256.Int {
+	if amount.IsZero() {
+		return *(s.Balance())
 	}
-	s.SetBalance(new(uint256.Int).Sub(s.Balance(), amount))
+	return s.SetBalance(new(uint256.Int).Sub(s.Balance(), amount))
 }
 
-// SetBalance update account balance.
-func (s *stateObject) SetBalance(amount *uint256.Int) {
+// SetBalance updates account balance.
+// Returns the previous value.
+func (s *stateObject) SetBalance(amount *uint256.Int) uint256.Int {
+	prev := *s.account.Balance
 	s.db.journal.append(balanceChange{
 		account: &s.address,
 		prev:    new(uint256.Int).Set(s.account.Balance),
 	})
 	s.setBalance(amount)
-}
-
-// AddPrecompileFn appends to the journal an entry
-// with a snapshot of the multi-store and events
-// previous to the precompile call
-func (s *stateObject) AddPrecompileFn(cms storetypes.CacheMultiStore, events sdk.Events) {
-	s.db.journal.append(precompileCallChange{
-		multiStore: cms,
-		events:     events,
-	})
+	return prev
 }
 
 func (s *stateObject) setBalance(amount *uint256.Int) {
@@ -227,6 +219,13 @@ func (s *stateObject) Nonce() uint64 {
 
 // GetCommittedState query the committed state
 func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
+	if s.overrideStorage != nil {
+		if value, ok := s.overrideStorage[key]; ok {
+			return value
+		}
+		return common.Hash{}
+	}
+
 	if value, cached := s.originStorage[key]; cached {
 		return value
 	}
@@ -245,11 +244,12 @@ func (s *stateObject) GetState(key common.Hash) common.Hash {
 }
 
 // SetState sets the contract state
-func (s *stateObject) SetState(key common.Hash, value common.Hash) {
+// It returns the previous value
+func (s *stateObject) SetState(key common.Hash, value common.Hash) common.Hash {
 	// If the new value is the same as old, don't set
 	prev := s.GetState(key)
 	if prev == value {
-		return
+		return prev
 	}
 	// New value is different, update and journal the change
 	s.db.journal.append(storageChange{
@@ -258,6 +258,16 @@ func (s *stateObject) SetState(key common.Hash, value common.Hash) {
 		prevalue: prev,
 	})
 	s.setState(key, value)
+	return prev
+}
+
+// SetStorage overrides the entire contract storage for this state object.
+// This replaces the committed state with the provided storage map, clearing
+// any previous origin and dirty storage.
+func (s *stateObject) SetStorage(storage Storage) {
+	s.overrideStorage = storage
+	s.originStorage = make(Storage)
+	s.dirtyStorage = make(Storage)
 }
 
 func (s *stateObject) setState(key, value common.Hash) {

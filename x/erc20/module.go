@@ -27,11 +27,11 @@ import (
 )
 
 // consensusVersion defines the current x/erc20 module consensus version.
-const consensusVersion = 4
+const consensusVersion = 1
 
 // type check to ensure the interface is properly implemented
 var (
-	_ module.AppModule           = AppModule{}
+	_ module.AppModule           = AppModule{} //nolint:staticcheck // check against deprecated type
 	_ module.AppModuleBasic      = AppModuleBasic{}
 	_ module.AppModuleSimulation = AppModule{}
 
@@ -100,29 +100,23 @@ type AppModule struct {
 	AppModuleBasic
 	keeper keeper.Keeper
 	ak     authkeeper.AccountKeeper
-	// legacySubspace is used solely for migration of x/params managed parameters
-	legacySubspace types.Subspace
 }
 
 // NewAppModule creates a new AppModule Object
 func NewAppModule(
 	k keeper.Keeper,
 	ak authkeeper.AccountKeeper,
-	ss types.Subspace,
 ) AppModule {
 	return AppModule{
 		AppModuleBasic: AppModuleBasic{},
 		keeper:         k,
 		ak:             ak,
-		legacySubspace: ss,
 	}
 }
 
 func (AppModule) Name() string {
 	return types.ModuleName
 }
-
-func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterMsgServer(cfg.MsgServer(), &am.keeper)

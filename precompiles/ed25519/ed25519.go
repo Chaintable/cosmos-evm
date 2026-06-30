@@ -13,14 +13,29 @@ import (
 	evmtypes "github.com/cosmos/evm/x/vm/types"
 )
 
-// Embed abi json file to the executable binary. Needed when importing as dependency.
-//
-//go:embed abi.json
-var f embed.FS
+var _ vm.PrecompiledContract = &Precompile{}
 
-const ED25519_VERIFY_BASE_GAS = 2000
-const SHA512_BASE_GAS = 60
-const SHA512_PER_WORD_GAS = 12
+var (
+	// Embed abi json file to the executable binary. Needed when importing as dependency.
+	//
+	//go:embed abi.json
+	f   embed.FS
+	ABI abi.ABI
+)
+
+func init() {
+	var err error
+	ABI, err = cmn.LoadABI(f, "abi.json")
+	if err != nil {
+		panic(err)
+	}
+}
+
+const (
+	Ed25519VerifyBaseGas = 2000
+	Sha512BaseGas        = 60
+	Sha512PerWordGas     = 12
+)
 
 const ED25519VerifyMethod = "ed25519Verify"
 
@@ -28,15 +43,10 @@ type Precompile struct {
 	abi.ABI
 }
 
-func NewPrecompile() (*Precompile, error) {
-	abi, err := cmn.LoadABI(f, "abi.json")
-	if err != nil {
-		return nil, err
-	}
-
+func NewPrecompile() *Precompile {
 	return &Precompile{
-		ABI: abi,
-	}, nil
+		ABI: ABI,
+	}
 }
 
 func (Precompile) Address() common.Address {
@@ -44,14 +54,23 @@ func (Precompile) Address() common.Address {
 }
 
 func (p Precompile) RequiredGas(input []byte) uint64 {
-	// Challenge for ed25519 uses sha512 of sig.R, pubkey, msg
-	// So exclude 32 bytes of sig.Z from the length
-	// Also exclute 4 bytes of method selector
-	msgLen := max(len(input)-36, 0)
-	return ED25519_VERIFY_BASE_GAS + SHA512_BASE_GAS + SHA512_PER_WORD_GAS*((uint64(msgLen)+31)/32)
+	// ed25519 challenge hashes via SHA-512: sig.R (32) ++ pubkey (32) ++ msg.
+	// ABI-encoded calldata layout for ed25519Verify(bytes32, bytes32[2], bytes):
+	//   4  (selector)
+	//   32 (pubkey  – static bytes32)
+	//   64 (sig     – static bytes32[2])
+	//   32 (offset  – pointer to dynamic `bytes`)
+	//   32 (length  – byte-length of msg)
+	// = 164 bytes of fixed overhead; everything beyond is the message payload.
+	sha512Len := uint64(64 + max(len(input)-164, 0)) //nolint:gosec
+	return Ed25519VerifyBaseGas + Sha512BaseGas + Sha512PerWordGas*((sha512Len+31)/32)
 }
 
 func (p Precompile) Run(_ *vm.EVM, contract *vm.Contract, _ bool) (bz []byte, err error) {
+	if len(contract.Input) < 4 {
+		return nil, vm.ErrExecutionReverted
+	}
+
 	method, err := p.MethodById(contract.Input[:4])
 	if err != nil {
 		return nil, err

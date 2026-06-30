@@ -17,7 +17,6 @@ var (
 	ErrTooSmallLiquidStakeAmount                    = errors.Register(ModuleName, 1010, "liquid stake amount is too small, the result becomes zero")
 	ErrTooSmallLiquidUnstakingAmount                = errors.Register(ModuleName, 1011, "liquid unstaking amount is too small, the result becomes zero")
 	ErrNoLPContractAddress                          = errors.Register(ModuleName, 1012, "CW address of an LP contract is not set")
-	ErrDisabledLSM                                  = errors.Register(ModuleName, 1013, "LSM delegation is disabled")
 	ErrLSMTokenizeFailed                            = errors.Register(ModuleName, 1014, "LSM tokenization failed")
 	ErrLSMRedeemFailed                              = errors.Register(ModuleName, 1015, "LSM redemption failed")
 	ErrLPContract                                   = errors.Register(ModuleName, 1016, "CW contract execution failed")
@@ -29,8 +28,4 @@ var (
 	ErrInvalidResponse                              = errors.Register(ModuleName, 1022, "invalid response")
 	ErrUnstakeFailed                                = errors.Register(ModuleName, 1023, "Unstaking failed")
 	ErrRedelegateFailed                             = errors.Register(ModuleName, 1024, "Redelegate failed")
-	//allow only exact match case conversion rate authorization is hard to implement
-	ErrStakeToLPFailedAmountNotSame                 = errors.Register(ModuleName, 1025, "Stake to LP authz failed: requested amount of staked tokens should be equal to authorized")
-	ErrStakeToLPFailedInvalidValidator              = errors.Register(ModuleName, 1026, "Stake to LP authz failed: validator not correpsond")
-	ErrStakeToLPFailedInvalidLiquidAmount           = errors.Register(ModuleName, 1027, "Stake to LP authz failed: requested liquid amount is less then allowed minimal")
 )

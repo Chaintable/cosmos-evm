@@ -2,15 +2,15 @@ package cosmos
 
 import (
 	"fmt"
+	"strconv"
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 
 	anteinterfaces "github.com/cosmos/evm/ante/interfaces"
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 	"github.com/cosmos/evm/ethereum/eip712"
-	"github.com/cosmos/evm/types"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -25,11 +25,11 @@ import (
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
 
-var evmCodec codec.ProtoCodecMarshaler
+var evmCodec codec.Codec
 
 func init() {
 	registry := codectypes.NewInterfaceRegistry()
-	types.RegisterInterfaces(registry)
+	eip712.RegisterInterfaces(registry)
 	evmCodec = codec.NewProtoCodec(registry)
 }
 
@@ -177,7 +177,7 @@ func VerifySignature(
 			return errorsmod.Wrap(errortypes.ErrNoSignatures, "tx doesn't contain any msgs to verify signature")
 		}
 
-		txBytes := legacytx.StdSignBytes(
+		txBytes := legacytx.StdSignBytes( //nolint:staticcheck // checking legacy type
 			signerData.ChainID,
 			signerData.AccountNumber,
 			signerData.Sequence,
@@ -189,7 +189,7 @@ func VerifySignature(
 			msgs, tx.GetMemo(),
 		)
 
-		signerChainID, err := types.ParseChainID(signerData.ChainID)
+		signerChainID, err := strconv.ParseUint(signerData.ChainID, 10, 64)
 		if err != nil {
 			return errorsmod.Wrapf(err, "failed to parse chain-id: %s", signerData.ChainID)
 		}
@@ -203,12 +203,12 @@ func VerifySignature(
 			return errorsmod.Wrap(errortypes.ErrUnknownExtensionOptions, "tx doesn't contain expected amount of extension options")
 		}
 
-		extOpt, ok := opts[0].GetCachedValue().(*types.ExtensionOptionsWeb3Tx)
+		extOpt, ok := opts[0].GetCachedValue().(*eip712.ExtensionOptionsWeb3Tx)
 		if !ok {
 			return errorsmod.Wrap(errortypes.ErrUnknownExtensionOptions, "unknown extension option")
 		}
 
-		if extOpt.TypedDataChainID != signerChainID.Uint64() {
+		if extOpt.TypedDataChainID != signerChainID {
 			return errorsmod.Wrap(errortypes.ErrInvalidChainID, "invalid chain-id")
 		}
 
@@ -244,7 +244,7 @@ func VerifySignature(
 			feePayerSig[ethcrypto.RecoveryIDOffset] -= 27
 		}
 
-		feePayerPubkey, err := secp256k1.RecoverPubkey(sigHash, feePayerSig)
+		feePayerPubkey, err := ethcrypto.Ecrecover(sigHash, feePayerSig)
 		if err != nil {
 			return errorsmod.Wrap(err, "failed to recover delegated fee payer from sig")
 		}
@@ -270,7 +270,7 @@ func VerifySignature(
 
 		// VerifySignature of ethsecp256k1 accepts 64 byte signature [R||S]
 		// WARNING! Under NO CIRCUMSTANCES try to use pubKey.VerifySignature there
-		if !secp256k1.VerifySignature(pubKey.Bytes(), sigHash, feePayerSig[:len(feePayerSig)-1]) {
+		if !ethcrypto.VerifySignature(pubKey.Bytes(), sigHash, feePayerSig[:len(feePayerSig)-1]) {
 			return errorsmod.Wrap(errortypes.ErrorInvalidSigner, "unable to verify signer signature of EIP712 typed data")
 		}
 

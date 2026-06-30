@@ -114,6 +114,13 @@ func BuildBlockStateDiff(parentRoot common.Hash, root common.Hash, diffs []dtype
 
 	for _, diff := range diffs {
 		for _, deletedAccount := range diff.DeletedAccounts {
+			if newAccount, ok := newAccountMap[deletedAccount]; ok {
+				delete(codeMap, newAccount.CodeHash)
+				delete(newAccountMap, deletedAccount)
+				delete(mergedStorage, deletedAccount)
+				continue
+			}
+
 			delete(newAccountMap, deletedAccount)
 			delete(mergedStorage, deletedAccount)
 			deleteAccountMap[deletedAccount] = struct{}{}

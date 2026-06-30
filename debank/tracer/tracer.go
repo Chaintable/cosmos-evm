@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -84,8 +85,6 @@ func (f *callFrame) processOutput(output []byte, err error, reverted bool) {
 		f.RevertReason = unpacked
 	}
 }
-
-var _ tracers.Tracer = (*CallTracer)(nil)
 
 func (t *CallTracer) ToTrace(f *callFrame, traceAddress []int64) dtypes.Trace {
 	CallCreateType := ""
@@ -174,49 +173,69 @@ func NewCallTracer(ctx *tracers.Context) *CallTracer {
 	return tracer
 }
 
-func (t *CallTracer) CaptureTxStart(gasLimit uint64) {
-	t.gasLimit = gasLimit
+func NewTracer(ctx *tracers.Context) (*tracers.Tracer, *CallTracer) {
+	callTracer := NewCallTracer(ctx)
+	return callTracer.Tracer(), callTracer
 }
 
-func (t *CallTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
-	toCopy := to
-	tpy := vm.CALL
-	if create {
-		tpy = vm.CREATE
+func (t *CallTracer) Tracer() *tracers.Tracer {
+	return &tracers.Tracer{
+		Hooks:     t.Hooks(),
+		GetResult: t.GetResult,
+		Stop:      t.Stop,
 	}
+}
+
+func (t *CallTracer) Hooks() *tracing.Hooks {
+	return &tracing.Hooks{
+		OnTxStart: t.OnTxStart,
+		OnTxEnd:   t.OnTxEnd,
+		OnEnter:   t.OnEnter,
+		OnExit:    t.OnExit,
+		OnOpcode:  t.OnOpcode,
+		OnFault:   t.OnFault,
+		OnLog:     t.OnLog,
+	}
+}
+
+func (t *CallTracer) StateDBHooks() *statedb.Hooks {
+	return &statedb.Hooks{
+		OnAccountSet:    t.OnAccountSet,
+		OnAccountDelete: t.OnAccountDelete,
+		OnStateSet:      t.OnStateSet,
+		OnCodeSet:       t.OnCodeSet,
+		OnLog:           t.OnLog,
+	}
+}
+
+func (t *CallTracer) OnTxStart(_ *tracing.VMContext, tx *ethtypes.Transaction, _ common.Address) {
+	if tx != nil {
+		t.gasLimit = tx.Gas()
+	}
+}
+
+func (t *CallTracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+	toCopy := to
 	call := callFrame{
-		Type:  tpy,
+		Type:  vm.OpCode(typ),
 		From:  from,
 		To:    &toCopy,
 		Input: common.CopyBytes(input),
 		Gas:   gas,
 		Value: value,
 	}
-	t.Evm = env
-	t.callstack = append(t.callstack, call)
-}
-func (t *CallTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
-	toCopy := to
-	call := callFrame{
-		Type:  typ,
-		From:  from,
-		To:    &toCopy,
-		Input: common.CopyBytes(input),
-		Gas:   gas,
-		Value: value,
+	if depth == 0 && t.gasLimit != 0 {
+		call.Gas = t.gasLimit
 	}
 	t.callstack = append(t.callstack, call)
 }
 
-func (t *CallTracer) CaptureExit(output []byte, usedGas uint64, err error) {
-	var reverted bool
-	if err != nil {
-		reverted = true
+func (t *CallTracer) OnExit(depth int, output []byte, usedGas uint64, err error, reverted bool) {
+	if depth == 0 {
+		t.captureEnd(output, usedGas, err, reverted)
+		return
 	}
-	isHomestead := t.Evm.ChainConfig().IsHomestead(t.ctx.BlockNumber)
-	if !isHomestead && errors.Is(err, vm.ErrCodeStoreOutOfGas) {
-		reverted = false
-	}
+
 	size := len(t.callstack)
 	if size <= 1 {
 		return
@@ -233,15 +252,7 @@ func (t *CallTracer) CaptureExit(output []byte, usedGas uint64, err error) {
 	t.callstack[size-1].Calls = append(t.callstack[size-1].Calls, call)
 }
 
-func (t *CallTracer) CaptureEnd(output []byte, usedGas uint64, err error) {
-	var reverted bool
-	if err != nil {
-		reverted = true
-	}
-	isHomestead := t.Evm.ChainConfig().IsHomestead(t.ctx.BlockNumber)
-	if !isHomestead && errors.Is(err, vm.ErrCodeStoreOutOfGas) {
-		reverted = false
-	}
+func (t *CallTracer) captureEnd(output []byte, usedGas uint64, err error, reverted bool) {
 	if len(t.callstack) != 1 {
 		return
 	}
@@ -249,14 +260,14 @@ func (t *CallTracer) CaptureEnd(output []byte, usedGas uint64, err error) {
 	t.callstack[0].processOutput(output, err, reverted)
 }
 
-func (t *CallTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, opDepth int, err error) {
-	if op == vm.SSTORE {
+func (t *CallTracer) OnOpcode(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, rData []byte, opDepth int, err error) {
+	if vm.OpCode(op) == vm.SSTORE && len(t.callstack) > 0 {
 		t.callstack[len(t.callstack)-1].SelfStorageChange = true
 		t.callstack[len(t.callstack)-1].StorageChange = true
 	}
 }
 
-func (t *CallTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+func (t *CallTracer) OnFault(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, depth int, err error) {
 
 }
 
@@ -281,7 +292,7 @@ func setStorageChange(cf *callFrame) {
 	}
 }
 
-func (t *CallTracer) CaptureTxEnd(restGas uint64) {
+func (t *CallTracer) OnTxEnd(receipt *ethtypes.Receipt, err error) {
 	if len(t.callstack) < 1 {
 		return
 	}
@@ -332,6 +343,10 @@ func childTraceAddress(a []int64, i int64) []int64 {
 }
 
 func (t *CallTracer) OnLog(log *ethtypes.Log) {
+	if len(t.callstack) == 0 {
+		return
+	}
+
 	topics := make([]string, len(log.Topics))
 	for i, topic := range log.Topics {
 		topics[i] = topic.Hex()
@@ -378,7 +393,10 @@ func (t *CallTracer) OnCodeSet(codeHash []byte, code []byte) {
 	t.NewCodes[common.BytesToHash(codeHash)] = code
 }
 
-func (t *CallTracer) OnTxEnd(from common.Address, tx *ethtypes.Transaction, baseFee *big.Int, res *types.MsgEthereumTxResponse) {
+func (t *CallTracer) SetTransactionResult(from common.Address, tx *ethtypes.Transaction, baseFee *big.Int, res *types.MsgEthereumTxResponse) {
+	if tx == nil || res == nil {
+		return
+	}
 	t.transaction = BuildPipelineTransaction(tx, int64(t.ctx.TxIndex), from, big.NewInt(int64(res.GasUsed)), baseFee, !res.Failed())
 }
 

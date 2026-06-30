@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	
+
 	"github.com/cosmos/evm/x/liquidstake/types"
-	ibctypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types" // Import the conflicting module
+	ibctypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types" // Import the conflicting module
 )
 
 func TestErrorCodeRegistration(t *testing.T) {

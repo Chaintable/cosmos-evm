@@ -9,68 +9,6 @@
         {
           "indexed": true,
           "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "granter",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256[]",
-          "name": "values",
-          "type": "uint256[]"
-        }
-      ],
-      "name": "AllowanceChange",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "granter",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "value",
-          "type": "uint256"
-        }
-      ],
-      "name": "Approval",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
           "name": "delegatorAddress",
           "type": "address"
         },
@@ -107,31 +45,6 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "granter",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        }
-      ],
-      "name": "Revocation",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
           "indexed": false,
           "internalType": "bool",
           "name": "isPaused",
@@ -145,47 +58,11 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
-          "internalType": "address",
-          "name": "delegatorAddress",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "validatorAddress",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "stakedAmount",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "liquidAmount",
-          "type": "uint256"
-        }
-      ],
-      "name": "StakeToLP",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
           "components": [
             {
               "internalType": "int256",
               "name": "unstakeFeeRate",
               "type": "int256"
-            },
-            {
-              "internalType": "bool",
-              "name": "lsmDisabled",
-              "type": "bool"
             },
             {
               "internalType": "int256",
@@ -246,122 +123,6 @@
       ],
       "name": "UpdateWhitelistedValidator",
       "type": "event"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "granter",
-          "type": "address"
-        },
-        {
-          "internalType": "string",
-          "name": "method",
-          "type": "string"
-        }
-      ],
-      "name": "allowance",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "remaining",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        }
-      ],
-      "name": "approve",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "approved",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        }
-      ],
-      "name": "decreaseAllowance",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "approved",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        }
-      ],
-      "name": "increaseAllowance",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "approved",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
     },
     {
       "inputs": [
@@ -485,11 +246,6 @@
               "type": "int256"
             },
             {
-              "internalType": "bool",
-              "name": "lsmDisabled",
-              "type": "bool"
-            },
-            {
               "internalType": "int256",
               "name": "minLiquidStakeAmount",
               "type": "int256"
@@ -531,70 +287,12 @@
     {
       "inputs": [
         {
-          "internalType": "address",
-          "name": "grantee",
-          "type": "address"
-        },
-        {
-          "internalType": "string[]",
-          "name": "methods",
-          "type": "string[]"
-        }
-      ],
-      "name": "revoke",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "revoked",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
           "internalType": "bool",
           "name": "isPaused",
           "type": "bool"
         }
       ],
       "name": "setModulePaused",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "success",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "delegatorAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "validatorAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "stakedAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "liquidAmount",
-          "type": "uint256"
-        }
-      ],
-      "name": "stakeToLP",
       "outputs": [
         {
           "internalType": "bool",
@@ -668,11 +366,6 @@
               "internalType": "int256",
               "name": "unstakeFeeRate",
               "type": "int256"
-            },
-            {
-              "internalType": "bool",
-              "name": "lsmDisabled",
-              "type": "bool"
             },
             {
               "internalType": "int256",

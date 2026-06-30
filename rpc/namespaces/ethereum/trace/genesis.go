@@ -45,32 +45,6 @@ var (
     "extra_eips": [
       "3855"
     ],
-    "chain_config": {
-      "homestead_block": "0",
-      "dao_fork_block": "0",
-      "dao_fork_support": true,
-      "eip150_block": "0",
-      "eip155_block": "0",
-      "eip158_block": "0",
-      "byzantium_block": "0",
-      "constantinople_block": "0",
-      "petersburg_block": "0",
-      "istanbul_block": "0",
-      "muir_glacier_block": "0",
-      "berlin_block": "0",
-      "london_block": "0",
-      "arrow_glacier_block": "0",
-      "gray_glacier_block": "0",
-      "merge_netsplit_block": "0",
-      "chain_id": "239",
-      "denom": "utac",
-      "decimals": "18",
-      "shanghai_time": "0",
-      "cancun_time": "0",
-      "prague_time": null,
-      "verkle_time": null
-    },
-    "allow_unprotected_txs": true,
     "evm_channels": [],
     "access_control": {
       "create": {
@@ -144,15 +118,16 @@ func (api API) genesisAllocToStateDiff(genesisState types.GenesisState) (*dtypes
 			return nil, err
 		}
 		code := common.Hex2Bytes(account.Code)
+		codeHash := crypto.Keccak256Hash(code)
 		diff.NewAccounts = append(diff.NewAccounts, dtypes.NewAccount{
 			Address:  crypto.Keccak256Hash(address.Bytes()[:]),
 			Balance:  uint256.MustFromBig((*big.Int)(balance)),
 			Nonce:    uint64(*nonce),
-			CodeHash: common.BytesToHash(code),
+			CodeHash: codeHash,
 		})
 		if len(account.Code) > 0 {
 			diff.NewCodes = append(diff.NewCodes, dtypes.NewCode{
-				CodeHash: common.BytesToHash(code),
+				CodeHash: codeHash,
 				Code:     code,
 			})
 		}

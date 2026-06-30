@@ -13,7 +13,7 @@ func (a *API) EstimateGas(args evmtypes.TransactionArgs, blockContext *rpctypes.
 	if blockContext != nil {
 		blockNrOrHash = blockContext.GetBlockNumberOrHash()
 	}
-	blockNum, err := a.backend.BlockNumberFromTendermint(blockNrOrHash)
+	blockNum, err := a.backend.BlockNumberFromComet(blockNrOrHash)
 	if err != nil {
 		return nil, err
 	}

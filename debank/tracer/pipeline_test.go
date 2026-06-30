@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
-	"github.com/huandu/go-assert"
+	"github.com/stretchr/testify/require"
 )
 
 func addAccount(diff *dtypes.TransactionStateDiff, address common.Hash, codeHash common.Hash) {
@@ -50,11 +50,11 @@ func TestBuildBlockStateDiff(t *testing.T) {
 	txDiffs = append(txDiffs, *txDiff2)
 
 	blockStateDiff := BuildBlockStateDiff(types.EmptyRootHash, types.EmptyRootHash, txDiffs)
-	assert.AssertEqual(t, len(blockStateDiff.NewAccounts), 1)
-	assert.AssertEqual(t, len(blockStateDiff.DeletedAccounts), 0)
-	assert.AssertEqual(t, blockStateDiff.NewAccounts[0].Address, hash2)
-	assert.AssertEqual(t, len(blockStateDiff.NewCodes), 1)
-	assert.AssertEqual(t, blockStateDiff.NewCodes[0].CodeHash, codeHash2)
+	require.Len(t, blockStateDiff.NewAccounts, 1)
+	require.Empty(t, blockStateDiff.DeletedAccounts)
+	require.Equal(t, hash2, blockStateDiff.NewAccounts[0].Address)
+	require.Len(t, blockStateDiff.NewCodes, 1)
+	require.Equal(t, codeHash2, blockStateDiff.NewCodes[0].CodeHash)
 
 	txDiff3 := new(dtypes.TransactionStateDiff)
 	addAccount(txDiff3, hash3, codeHash3)
@@ -63,10 +63,10 @@ func TestBuildBlockStateDiff(t *testing.T) {
 	txDiffs = append(txDiffs, *txDiff3)
 
 	blockStateDiff = BuildBlockStateDiff(types.EmptyRootHash, types.EmptyRootHash, txDiffs)
-	assert.AssertEqual(t, len(blockStateDiff.NewAccounts), 1)
-	assert.AssertEqual(t, len(blockStateDiff.DeletedAccounts), 1)
-	assert.AssertEqual(t, blockStateDiff.NewAccounts[0].Address, hash3)
-	assert.AssertEqual(t, blockStateDiff.DeletedAccounts[0], hash4)
-	assert.AssertEqual(t, len(blockStateDiff.NewCodes), 1)
-	assert.AssertEqual(t, blockStateDiff.NewCodes[0].CodeHash, codeHash3)
+	require.Len(t, blockStateDiff.NewAccounts, 1)
+	require.Len(t, blockStateDiff.DeletedAccounts, 1)
+	require.Equal(t, hash3, blockStateDiff.NewAccounts[0].Address)
+	require.Equal(t, hash4, blockStateDiff.DeletedAccounts[0])
+	require.Len(t, blockStateDiff.NewCodes, 1)
+	require.Equal(t, codeHash3, blockStateDiff.NewCodes[0].CodeHash)
 }

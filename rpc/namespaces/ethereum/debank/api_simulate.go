@@ -44,11 +44,11 @@ func (a *API) SimulateTransactions(args []CallArgs, blockContext *rpctypes.Deban
 		}
 		rpcArgs.Args = append(rpcArgs.Args, realArgs)
 	}
-	blockNum, err := a.backend.BlockNumberFromTendermint(blockNrOrHash)
+	blockNum, err := a.backend.BlockNumberFromComet(blockNrOrHash)
 	if err != nil {
 		return nil, err
 	}
-	resBlock, err := a.backend.TendermintBlockByNumber(blockNum)
+	resBlock, err := a.backend.CometBlockByNumber(blockNum)
 	if err != nil {
 		a.logger.Debug("get block failed", "height", blockNum, "error", err.Error())
 		return nil, err
@@ -93,12 +93,10 @@ func applyBlockContext(blockNumber int64, blockHash common.Hash, blockTime int64
 			isSuccess = false
 		}
 		for j := range simulateRes.Events {
-			event := simulateRes.Events[j]
-			event.TxId = txId
+			simulateResList[i].Events[j].TxId = txId
 		}
 		for j := range simulateRes.Traces {
-			trace := simulateRes.Traces[j]
-			trace.TxID = txId
+			simulateResList[i].Traces[j].TxID = txId
 		}
 	}
 	resp := &rpctypes.DebankSimulateResp{

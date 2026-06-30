@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "../authorization/AuthorizationI.sol" as authorization;
 import "../common/Types.sol";
 
 /// @dev The LiquidStakingI contract's address.
@@ -13,7 +12,9 @@ LiquidStakingI constant LIQUIDSTAKING_CONTRACT = LiquidStakingI(LIQUIDSTAKING_PR
 /// @dev Define all the available liquidstake methods.
 string constant MSG_LIQUID_STAKE = "/tac.liquidstake.v1beta1.MsgLiquidStake";
 string constant MSG_LIQUID_UNSTAKE = "/tac.liquidstake.v1beta1.MsgLiquidUnstake";
-string constant MSG_STAKE_TO_LP = "/tac.liquidstake.v1beta1.MsgStakeToLP";
+string constant MSG_UPDATE_PARAMS = "/tac.liquidstake.v1beta1.MsgUpdateParams";
+string constant MSG_UPDATE_WHITELISTED_VALIDATORS = "/tac.liquidstake.v1beta1.MsgUpdateWhitelistedValidators";
+string constant MSG_SET_MODULE_PAUSED = "/tac.liquidstake.v1beta1.MsgSetModulePaused";
 
 
 struct WhitelistedValidator {
@@ -25,7 +26,6 @@ struct LiquidStakeParams {
     string                  liquidBondDenom;
     WhitelistedValidator[]  whitelistedValidators;
     int256                  unstakeFeeRate;
-    bool                    lsmDisabled;
     int256                  minLiquidStakeAmount;
     address                 cwLockedPoolAddress;
     address                 feeAccountAddress;
@@ -36,7 +36,6 @@ struct LiquidStakeParams {
 
 struct LiquidStakeUpdatableParams {
     int256                  unstakeFeeRate;
-    bool                    lsmDisabled;
     int256                  minLiquidStakeAmount;
     address                 cwLockedPoolAddress;
     address                 feeAccountAddress;
@@ -70,7 +69,7 @@ struct NetAmountState {
 }
 
 /// @dev The interface through which solidity contracts will interact with liquidstaking.
-interface LiquidStakingI is authorization.AuthorizationI {
+interface LiquidStakingI {
 
     // functions definitions start
     function liquidStake(
@@ -78,13 +77,6 @@ interface LiquidStakingI is authorization.AuthorizationI {
         uint256         amount
     ) external returns (bool success);
     // dev notes: bool success corresponds to "empty" responce in message server
-
-    function stakeToLP(
-        address         delegatorAddress,
-        address         validatorAddress,
-        uint256         stakedAmount,
-        uint256         liquidAmount
-    ) external returns (bool success);
 
     function liquidUnstake(
         address         delegatorAddress,
@@ -121,13 +113,6 @@ interface LiquidStakingI is authorization.AuthorizationI {
         uint256             amount
     );
 
-    event StakeToLP(
-        address indexed     delegatorAddress,
-        address indexed     validatorAddress,
-        uint256             stakedAmount,
-        uint256             liquidAmount
-    );
-
     event LiquidUnstake(
         address indexed     delegatorAddress,
         uint256             amount
@@ -146,4 +131,3 @@ interface LiquidStakingI is authorization.AuthorizationI {
     );
     // events definitions end
 }
-

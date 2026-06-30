@@ -17,16 +17,18 @@ import (
 )
 
 // GetEthIntrinsicGas returns the intrinsic gas cost for the transaction
-func (k *Keeper) GetEthIntrinsicGas(ctx sdk.Context, msg core.Message, cfg *params.ChainConfig, isContractCreation bool) (uint64, error) {
+func (k *Keeper) GetEthIntrinsicGas(ctx sdk.Context, msg core.Message, cfg *params.ChainConfig,
+	isContractCreation bool,
+) (uint64, error) {
 	height := big.NewInt(ctx.BlockHeight())
 	homestead := cfg.IsHomestead(height)
 	istanbul := cfg.IsIstanbul(height)
-	shanghai := cfg.IsShanghai(height, uint64(ctx.BlockTime().Unix()))
-
-	return core.IntrinsicGas(msg.Data, msg.AccessList, isContractCreation, homestead, istanbul, shanghai)
+	shanghai := cfg.IsShanghai(height, uint64(ctx.BlockTime().Unix())) //#nosec G115 -- int overflow is not a concern here
+	return core.IntrinsicGas(msg.Data, msg.AccessList, msg.SetCodeAuthorizations, isContractCreation,
+		homestead, istanbul, shanghai)
 }
 
-// RefundGas transfers the leftover gas to the sender of the message, caped to half of the total gas
+// RefundGas transfers the leftover gas to the sender of the message, capped to half of the total gas
 // consumed in the transaction. Additionally, the function sets the total gas consumed to the value
 // returned by the EVM execution, thus ignoring the previous intrinsic gas consumed during in the
 // AnteHandler.

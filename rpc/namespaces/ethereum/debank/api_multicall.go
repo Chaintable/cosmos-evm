@@ -150,14 +150,14 @@ func doOneCall(backend backend.EVMBackend, blockNrOrHash rpctypes.BlockNumberOrH
 		return result, err
 	}
 
-	blockNum, err := backend.BlockNumberFromTendermint(blockNrOrHash)
+	blockNum, err := backend.BlockNumberFromComet(blockNrOrHash)
 	if err != nil {
 		result.Code = errInternalError
 		result.Err = err.Error()
 		return result, err
 	}
 
-	r, err := backend.DoCall(arg, blockNum)
+	r, err := backend.DoCall(arg, blockNum, nil)
 	if err != nil {
 		result.Code = errEvmFailed
 		result.Err = err.Error()
@@ -208,9 +208,9 @@ func (a *API) ContractMultiCall(
 		CacheEnabled: !disableCache,
 	}
 
-	blockNum, err := a.backend.BlockNumberFromTendermint(blockNrOrHash)
+	blockNum, err := a.backend.BlockNumberFromComet(blockNrOrHash)
 	if err == nil {
-		tmBlock, err := a.backend.TendermintBlockByNumber(blockNum)
+		tmBlock, err := a.backend.CometBlockByNumber(blockNum)
 		if err == nil {
 			stats.BlockNum = uint64(tmBlock.Block.Height)
 			stats.BlockHash = common.BytesToHash(tmBlock.Block.Hash())
