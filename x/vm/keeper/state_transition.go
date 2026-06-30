@@ -52,7 +52,7 @@ func (k *Keeper) NewEVMWithOverridePrecompiles(
 		Time:        uint64(ctx.BlockHeader().Time.Unix()), //#nosec G115 -- int overflow is not a concern here
 		Difficulty:  big.NewInt(0),                         // unused. Only required in PoW context
 		BaseFee:     cfg.BaseFee,
-		BlobBaseFee: big.NewInt(0), // blob txs are not supported; set to 0 to prevent nil panic on BLOBBASEFEE opcode (0x4a)
+		BlobBaseFee: big.NewInt(0),   // blob txs are not supported; set to 0 to prevent nil panic on BLOBBASEFEE opcode (0x4a)
 		Random:      &common.MaxHash, // need to be different than nil to signal it is after the merge and pick up the right opcodes
 	}
 
@@ -532,6 +532,8 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, stateDB *statedb.StateD
 				return nil, errorsmod.Wrap(err, "failed to commit stateDB")
 			}
 		}
+	} else {
+		stateDB.CollectStateDiff()
 	}
 	// calculate a minimum amount of gas to be charged to sender if GasLimit
 	// is considerably higher than GasUsed to stay more aligned with CometBFT gas mechanics
@@ -562,6 +564,9 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, stateDB *statedb.StateD
 	// if the execution reverted, we return the revert reason as the return data
 	if vmError == vm.ErrExecutionReverted.Error() {
 		ret = evm.Interpreter().ReturnData()
+	}
+	if cfg.SimulateExec {
+		gasUsed = math.LegacyNewDec(int64(temporaryGasUsed)) //#nosec G115 -- int overflow is not a concern here
 	}
 	return &types.MsgEthereumTxResponse{
 		GasUsed:        gasUsed.TruncateInt().Uint64(),
