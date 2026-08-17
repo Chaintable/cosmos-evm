@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	Name = "debankTracer"
+	Name                  = "debankTracer"
+	parentCallFailedError = "parent call failed"
 )
 
 type callFrame struct {
@@ -57,6 +58,10 @@ func (f callFrame) TypeString() string {
 
 func (f callFrame) failed() bool {
 	return len(f.Error) > 0
+}
+
+func (f callFrame) traceFailed() bool {
+	return f.failed() || f.ParentFailed
 }
 
 func (f *callFrame) processOutput(output []byte, err error, reverted bool) {
@@ -114,6 +119,9 @@ func (t *CallTracer) ToTrace(f *callFrame, traceAddress []int64) dtypes.Trace {
 		if f.RevertReason != "" {
 			err = fmt.Sprintf("%s: %s", f.Error, f.RevertReason)
 		}
+	}
+	if f.ParentFailed && err == "" {
+		err = parentCallFailedError
 	}
 	return dtypes.Trace{
 		ID:                f.TraceID,
@@ -319,7 +327,7 @@ func (t *CallTracer) addTraceAndLog(cf *callFrame, traceAddress []int64) {
 	for i := range cf.Logs {
 		cf.Logs[i].ParentTraceID = cf.TraceID
 		cf.Logs[i].ID = util.ToHash([]string{cf.Logs[i].ParentTraceID, fmt.Sprintf("%d", cf.Logs[i].Position)})
-		if cf.failed() || cf.ParentFailed {
+		if cf.traceFailed() {
 			cf.Logs[i].LogIndex = 0
 			t.errorLogs = append(t.errorLogs, cf.Logs[i])
 		} else {
@@ -327,7 +335,7 @@ func (t *CallTracer) addTraceAndLog(cf *callFrame, traceAddress []int64) {
 		}
 	}
 	for i := range cf.Calls {
-		if cf.Calls[i].failed() {
+		if cf.Calls[i].traceFailed() {
 			t.errorTraces = append(t.errorTraces, t.ToTrace(&cf.Calls[i], childTraceAddress(traceAddress, int64(i))))
 		} else {
 			t.traces = append(t.traces, t.ToTrace(&cf.Calls[i], childTraceAddress(traceAddress, int64(i))))
